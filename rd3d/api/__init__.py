@@ -33,7 +33,7 @@ def demo(parser=None):
     @Hook.auto
     def add_args(parser=parser):
         parser = argparse.ArgumentParser() if parser is None else parser
-        parser.add_argument('--cfg_file', type=str, default="configs/iassd/iassd_hvcsx1_4x8_80e_kitti_3cls.py",
+        parser.add_argument('--cfg_file', type=str, default="configs/iassd/iassd_4x8_80e_kitti_3cls.py",
                             help='specify the config for training')
         parser.add_argument('--ckpt', type=str, default=None, help='checkpoint to start from')
         parser.add_argument('--set', dest='set_cfgs', default=None, nargs='...', help='set extra config keys if needed')
