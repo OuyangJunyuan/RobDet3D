@@ -1,0 +1,17 @@
+easydict>=1.9
+yaml>=0.2.5
+pyyaml>=6.0
+numpy>=1.21.5
+scipy>=1.7.3
+open3d>=0.15.2
+wandb>=0.13.3
+sharedarray>=3.2.1
+numba>=0.56.2
+torchvision>=0.13.1
+scikit-image>=0.19.3
+fire>=0.4.0
+prettytable>=3.4.1
+setuptools>=59.8.0
+accelerate>=0.14.0
+tqdm>=4.64.1
+torch
