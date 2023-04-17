@@ -40,7 +40,6 @@ if __name__ == '__main__':
             'numpy',
             'llvmlite',
             'numba',
-            'tensorboardX',
             'easydict',
             'pyyaml',
             'scikit-image',
