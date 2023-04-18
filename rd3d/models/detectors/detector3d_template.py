@@ -284,33 +284,14 @@ class Detector3DTemplate(nn.Module):
         return pred_dicts, recall_dict
 
     def post_processing_export(self, batch_dict):
-        class NMS3D(torch.autograd.Function):
-            @staticmethod
-            def forward(ctx, boxes, scores, score_thresh, iou_thresh, num_post_nms):
-                batch_size = batch_dict['batch_size']
-                nms_boxes = boxes.new_zeros([batch_size, num_post_nms, boxes.shape[-1]])
-                nms_scores = boxes.new_zeros([batch_size, num_post_nms, scores.shape[-1]])
-                nms_nums = boxes.new_zeros([batch_size], dtype=torch.int32)
-                return nms_boxes, nms_scores, nms_nums
-
-            @staticmethod
-            def symbolic(g: torch._C.Graph, boxes, scores, score_thresh, iou_thresh, num_post_nms):
-                return g.op(
-                    "rd3d::NMSBEV", boxes, scores,
-                    score_threshold_f=score_thresh,
-                    iou_threshold_f=iou_thresh,
-                    num_post_nms_i=num_post_nms,
-                    outputs=3
-                )
-
-        nms3d = NMS3D.apply
+        from ...ops.iou3d_nms.iou3d_nms_utils import nms3d
 
         batch_pred_boxes = batch_dict['batch_box_preds']  # [b,n,7+c+1]
         batch_pred_scores = batch_dict['batch_score_preds'].sigmoid()  # [b,n,1]
         final_boxes, final_scores, nums = nms3d(batch_pred_boxes, batch_pred_scores,
                                                 self.model_cfg.POST_PROCESSING.SCORE_THRESH,
                                                 self.model_cfg.POST_PROCESSING.NMS_CONFIG.NMS_THRESH,
-                                                batch_pred_boxes.shape[1].item())
+                                                batch_pred_boxes.shape[1].item(), batch_dict["batch_size"])
         return final_boxes, final_scores, nums
 
     @staticmethod
