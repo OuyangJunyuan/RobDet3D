@@ -9,6 +9,28 @@ from ...utils import common_utils
 from . import iou3d_nms_cuda
 
 
+class NMS3D(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, boxes, scores, score_thresh, iou_thresh, num_post_nms, batch_size):
+        final_boxes = boxes
+        final_scores = scores
+        nms_nums = boxes[:, 0, 0].int()
+        return final_boxes, final_scores, nms_nums
+
+    @staticmethod
+    def symbolic(g: torch._C.Graph, boxes, scores, score_thresh, iou_thresh, num_post_nms, batch_size):
+        return g.op(
+            "rd3d::NMSBEV", boxes, scores,
+            score_threshold_f=score_thresh,
+            iou_threshold_f=iou_thresh,
+            num_post_nms_i=num_post_nms,
+            outputs=3
+        )
+
+
+nms3d = NMS3D.apply
+
+
 def boxes_bev_iou_cpu(boxes_a, boxes_b):
     """
     Args:
