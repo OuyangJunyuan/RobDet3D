@@ -1,14 +1,24 @@
-from ..base.datasets.kitti_3cls import *
-from ..base.runtime.adam_onecycle_8_80e import *
+from ...base.runtime.adam_onecycle_8_80e import *
+from ...base.datasets.kitti_peds_fov90 import *
 
 DATASET.DATA_PROCESSOR = [
     dict(NAME='mask_points_and_boxes_outside_range',
+         REMOVE_OUTSIDE_BOXES=True),
+    dict(NAME='mask_points_and_boxes_outside_fov',
+         FOV=[-0.78539816, 0.78539816],
          REMOVE_OUTSIDE_BOXES=True),
     dict(NAME='shuffle_points',
          SHUFFLE_ENABLED={'train': True, 'test': False}),
     dict(NAME='sample_points',
          NUM_POINTS={'train': 16384, 'test': 16384})
 ]
+DATASET.DATA_AUGMENTOR.AUG_CONFIG_LIST.append(
+    dict(NAME='random_box_noise',
+         SCALE_RANGE=[0.95, 1.05],
+         LOC_NOISE=[1.0, 1.0, 0.0],
+         ROTATION_RANGE=[-1.04719755, 1.04719755],
+         ENABLE_PROB=0.5)
+)
 
 MODEL = dict(
     NAME='PointVote',
@@ -17,11 +27,11 @@ MODEL = dict(
         NAME='GeneralPointNet2MSG',
         ENCODER=
         [
-            dict(samplers=[dict(name='hvcs_for_query', sample=4096, voxel=[0.4, 0.4, 0.35])],
+            dict(samplers=[dict(name='hvcs_v2', sample=4096, voxel=[0.123, 0.123, 0.123])],
                  groupers=[dict(name='ball', query=dict(radius=0.2, neighbour=16), mlps=[16, 16, 32]),
                            dict(name='ball', query=dict(radius=0.8, neighbour=32), mlps=[32, 32, 64])],
                  aggregation=dict(name='cat-mlps', mlps=[64])),
-            dict(samplers=[dict(name='hvcs_for_query', sample=1024, voxel=[2.0, 2.0, 1.75])],
+            dict(samplers=[dict(name='hvcs_v2', sample=1024, voxel=[0.3, 0.3, 0.3])],
                  groupers=[dict(name='ball', query=dict(radius=0.8, neighbour=16), mlps=[64, 64, 128]),
                            dict(name='ball', query=dict(radius=1.6, neighbour=32), mlps=[64, 96, 128])],
                  aggregation=dict(name='cat-mlps', mlps=[128])),
@@ -51,25 +61,27 @@ MODEL = dict(
         SHARED_FC=[512],
         CLS_FC=[256, 256],
         REG_FC=[256, 256],
+        IOU_FC=[256, 256],
         BOX_CODER=dict(name='PointBinResidualCoder', angle_bin_num=12,
-                       use_mean_size=True, mean_size=[[3.9, 1.6, 1.56],
-                                                      [0.8, 0.6, 1.73],
-                                                      [1.76, 0.6, 1.73]]),
+                       use_mean_size=False, mean_size=[[3.9, 1.6, 1.56],
+                                                       [0.8, 0.6, 1.73],
+                                                       [1.76, 0.6, 1.73]]),
         TARGET_CONFIG={'method': 'mask', 'gt_central_radius': False, 'extra_width': [0.2, 0.2, 0.2]},
         LOSS_CONFIG=dict(LOSS_CLS='WeightedBinaryCrossEntropyLoss',
                          LOSS_REG='WeightedSmoothL1Loss',
-                         AXIS_ALIGNED_IOU_LOSS_REGULARIZATION=True,
-                         CORNER_LOSS_REGULARIZATION=True,
+                         AXIS_ALIGNED_IOU_LOSS_REGULARIZATION=False,
+                         CORNER_LOSS_REGULARIZATION=False,
                          WEIGHTS={'point_cls_weight': 1.0,
                                   'point_offset_reg_weight': 1.0,
                                   'point_angle_cls_weight': 0.2,
                                   'point_angle_reg_weight': 1.0,
                                   'point_iou_weight': 1.0,
-                                  'point_corner_weight': 1.0}),
+                                  'point_corner_weight': 1.0,
+                                  'point_iou_reg_weight': 1.0}),
     ),
     POST_PROCESSING=dict(
         EVAL_METRIC='kitti',
-        SCORE_THRESH=0.1,
+        SCORE_THRESH=0.5,
         OUTPUT_RAW_SCORE=False,
         RECALL_THRESH_LIST=[0.3, 0.5, 0.7],
         NMS_CONFIG=dict(NMS_TYPE='nms_gpu',
@@ -80,3 +92,6 @@ MODEL = dict(
     )
 )
 RUN.tracker.metrics = DATASET.get('metrics', [])
+RUN.workflows.train = [dict(state='train', split='train', epochs=75)] + \
+                      [dict(state='train', split='train', epochs=1),
+                       dict(state='test', split='test', epochs=1)] * 5

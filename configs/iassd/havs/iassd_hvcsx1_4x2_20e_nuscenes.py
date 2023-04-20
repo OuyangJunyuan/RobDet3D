@@ -1,6 +1,7 @@
 from ..base.datasets.nuscenes_point import *
 from ..base.runtime.adam_onecycle_2_20e import *
-DATASET.BALANCED_RESAMPLING=True
+
+DATASET.BALANCED_RESAMPLING = True
 MODEL = dict(
     NAME='PointVote',
     CLASS_NAMES=DATASET.CLASS_NAMES,
@@ -78,3 +79,4 @@ MODEL = dict(
     )
 )
 RUN.tracker.metrics = DATASET.pop('metrics', [])
+RUN.checkpoints.max = 10
