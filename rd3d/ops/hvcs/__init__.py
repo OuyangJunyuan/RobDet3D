@@ -45,6 +45,7 @@ class HAVSamplerForGridQuery(torch.autograd.Function):
                 max_iter: int) -> torch.Tensor:
         indices, voxel, hash_table, ind_table = \
             hvcs_cuda.adaptive_sampling_and_query(xyz, sample_num, tolerance, max_iter, *voxel_size)
+
         return indices, voxel, hash_table, ind_table
 
     @staticmethod

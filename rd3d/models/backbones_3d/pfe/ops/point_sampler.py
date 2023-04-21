@@ -493,7 +493,8 @@ class HierarchicalVoxelSamplingInfo(PointSampling):
 
     @torch.no_grad()
     def forward(self, xyz: torch.Tensor, **kwargs) -> (torch.Tensor, torch.Tensor, torch.Tensor):
-        res = hvcs_ops.voxel_size_experiments(xyz, self.sample_num, self.voxel, self.tolerance, self.max_iter)
+        from .....ops.hvcs import hvcs_cuda
+        res = hvcs_cuda.voxel_size_experiments(xyz, self.sample_num, self.voxel, self.tolerance, self.max_iter)
         ind, voxel, num = res
         return ind, voxel, num
 

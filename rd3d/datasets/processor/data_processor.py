@@ -90,6 +90,33 @@ class DataProcessor(object):
             data_dict['gt_boxes'] = data_dict['gt_boxes'][mask]
         return data_dict
 
+    def mask_points_and_boxes_outside_fov(self, data_dict=None, config=None):
+        if data_dict is None:
+            return partial(self.mask_points_and_boxes_outside_fov, config=config)
+
+        if data_dict.get('points', None) is not None:
+            def mask_points_by_fov(points, limit_fov):
+                theta = np.arctan2(points[:, 1], points[:, 0])
+                mask = (theta >= limit_fov[0]) & (theta <= limit_fov[1])
+                return mask
+
+            mask = mask_points_by_fov(data_dict['points'], config.FOV)
+            data_dict['points'] = data_dict['points'][mask]
+
+        if data_dict.get('gt_boxes', None) is not None and config.REMOVE_OUTSIDE_BOXES and self.training:
+            def mask_boxes_outside_fov_numpy(boxes, limit_range, min_num_corners=1):
+                if boxes.shape[1] > 7:
+                    boxes = boxes[:, 0:7]
+                corners = box_utils.boxes_to_corners_3d(boxes)  # (N, 8, 3)
+                theta = np.arctan2(corners[..., 1:2], corners[..., 0:1])
+                mask = ((theta >= limit_range[0]) & (theta <= limit_range[1])).all(axis=2)
+                mask = mask.sum(axis=1) >= min_num_corners  # (N)
+                return mask
+
+            mask = mask_boxes_outside_fov_numpy(data_dict['gt_boxes'], config.FOV, 1)
+            data_dict['gt_boxes'] = data_dict['gt_boxes'][mask]
+        return data_dict
+
     def shuffle_points(self, data_dict=None, config=None):
         if data_dict is None:
             return partial(self.shuffle_points, config=config)
