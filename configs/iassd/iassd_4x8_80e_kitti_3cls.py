@@ -25,7 +25,7 @@ MODEL = dict(
                  groupers=[dict(name='ball', query=dict(radius=0.8, neighbour=16), mlps=[64, 64, 128]),
                            dict(name='ball', query=dict(radius=1.6, neighbour=32), mlps=[64, 96, 128])],
                  aggregation=dict(name='cat-mlps', mlps=[128])),
-            dict(samplers=[dict(name='ctr', range=[0, 1024], sample=512, mlps=[128], class_name=DATASET.CLASS_NAMES,
+            dict(samplers=[dict(name='ctr', range=[0, 1024], sample=512, mlps=[128], class_names=DATASET.CLASS_NAMES,
                                 train=dict(target={'extra_width': [0.5, 0.5, 0.5]},
                                            loss={'weight': 1.0, 'tb_tag': 'sasa_1'}))],
                  groupers=[dict(name='ball', query=dict(radius=1.6, neighbour=16), mlps=[128, 128, 256]),
@@ -35,7 +35,7 @@ MODEL = dict(
     POINT_HEAD=dict(
         NAME='PointHeadVotePlus',
         CLASS_AGNOSTIC=False,
-        VOTE_SAMPLER=dict(name='ctr', range=[0, 512], sample=256, mlps=[256], class_name=DATASET.CLASS_NAMES,
+        VOTE_SAMPLER=dict(name='ctr', range=[0, 512], sample=256, mlps=[256], class_names=DATASET.CLASS_NAMES,
                           train=dict(target={'extra_width': [0.5, 0.5, 0.5]},
                                      loss={'weight': 1.0, 'tb_tag': 'sasa_2'})),
         VOTE_MODULE=

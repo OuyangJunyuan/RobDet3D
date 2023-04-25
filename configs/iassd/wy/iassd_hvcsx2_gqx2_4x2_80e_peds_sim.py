@@ -2,13 +2,14 @@ from ...base.runtime.adam_onecycle_8_80e import *
 from ...base.datasets.kitti_peds_fov360 import *
 
 DATASET.POINT_CLOUD_RANGE = [-45, -45, -3, 45, 45, 30]
-# DATASET.DATA_AUGMENTOR.AUG_CONFIG_LIST.append(
-#     dict(NAME='random_box_noise',
-#          SCALE_RANGE=[1.0, 1.0],
-#          LOC_NOISE=[1.0, 1.0, 0.0],
-#          ROTATION_RANGE=[-1.04719755, 1.04719755],
-#          ENABLE_PROB=0.5)
-# )
+DATASET.DATA_AUGMENTOR.AUG_CONFIG_LIST.append(
+    dict(NAME='random_box_noise',
+         SCALE_RANGE=[0.95, 1.05],
+         LOC_NOISE=[1.0, 1.0, 0.0],
+         ROTATION_RANGE=[-1.04719755, 1.04719755],
+         ENABLE_PROB=0.5)
+)
+
 DATASET.DATA_PROCESSOR = [
     dict(NAME='mask_points_and_boxes_outside_range',
          REMOVE_OUTSIDE_BOXES=True),
@@ -49,7 +50,7 @@ MODEL = dict(
         VOTE_MODULE=
         [
             dict(mlps=[128],
-                 max_translation_range=[1.5, 1.5, 1.5],
+                 max_translation_range=[3, 3, 2],
                  sa=dict(groupers=[dict(name='ball', query=dict(radius=4.8, neighbour=16), mlps=[256, 256, 512]),
                                    dict(name='ball', query=dict(radius=6.4, neighbour=32), mlps=[256, 512, 1024])],
                          aggregation=dict(name='cat-mlps')),
@@ -87,6 +88,6 @@ MODEL = dict(
     )
 )
 RUN.tracker.metrics = DATASET.get('metrics', [])
-RUN.workflows.train = [dict(state='train', split='train', epochs=75)] + \
+RUN.workflows.train = [dict(state='train', split='train', epochs=80)] + \
                       [dict(state='train', split='train', epochs=1),
-                       dict(state='test', split='test', epochs=1)] * 5
+                       dict(state='test', split='test', epochs=1)] * 0

@@ -93,8 +93,10 @@ class BallQueryPointGrouping(PointGrouping):
              new_feats:     (B, M, K, {3 +} C)
         """
         if self.ctx:
-            group_member_cnt, group_member_ind = self.querier(xyz, new_xyz, self.ctx["voxel"], self.ctx["voxel_hash"],
-                                                              self.ctx["hash2query"])  # (B,M) (B,M,K)
+            group_member_cnt, group_member_ind = self.querier(xyz, new_xyz,
+                                                              self.ctx["voxels"],
+                                                              self.ctx["voxel_hashes"],
+                                                              self.ctx["hash2query"])
         else:
             group_member_cnt, group_member_ind = self.querier(xyz, new_xyz)  # (B,M) (B,M,K)
         empty_mask = group_member_cnt > 0

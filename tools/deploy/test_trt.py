@@ -1,4 +1,4 @@
-from rd3d.api import demo
+from rd3d.api import quick_demo
 
 
 def evaluate(engine_file, dataloader):
@@ -89,7 +89,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--engine', type=Path)
     parser.add_argument('--cache', type=Path, default=Path("tools/experiments2/data/eval.pkl"))
-    _, dataloader, args = demo(parser)
+    _, dataloader, args = quick_demo(parser)
 
     engine_file = args.engine
     eval_file = args.cache

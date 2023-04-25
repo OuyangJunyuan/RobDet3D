@@ -445,58 +445,57 @@ class CenterAwareSampling(PointSampling):
         return sample_idx.long()
 
 
-@sampler.register_module('hvcs_v2', 'hvcs')
+@sampler.register_module('hvcs_v2', 'hvcs', 'havs')
 class HierarchicalAdaptiveVoxelSampling(PointSampling):
-    from .....ops.hvcs import hav_sampling
 
     def __init__(self, sampling_cfg, *args, **kwargs):
         super(HierarchicalAdaptiveVoxelSampling, self).__init__(sampling_cfg)
         self.voxel = sampling_cfg.voxel
         self.tolerance = sampling_cfg.get('tolerance', 0.01)
-        self.max_iter = sampling_cfg.get('max_iter', 20)
+        self.max_iter = sampling_cfg.get('max_iterations', sampling_cfg.get('max_iter', 20))
 
     @torch.no_grad()
     @PS.sample_in_range
     def forward(self, xyz: torch.Tensor, **kwargs) -> torch.Tensor:
-        ind = HierarchicalAdaptiveVoxelSampling.hav_sampling(xyz, self.sample_num, self.voxel,
-                                                             self.tolerance, self.max_iter)
-        return ind
+        from .....ops.havs import havs_batch
+        indices = havs_batch(xyz, self.sample_num, self.voxel, self.tolerance, self.max_iter)
+        return indices
 
 
-@sampler.register_module('hvcs_for_query')
+@sampler.register_module('hvcs_for_query', 'havs_for_query')
 class HierarchicalAdaptiveVoxelSamplingForGridQuery(PointSampling):
-    from .....ops.hvcs import hav_sampling_for_query
 
     def __init__(self, sampling_cfg, *args, **kwargs):
         super(HierarchicalAdaptiveVoxelSamplingForGridQuery, self).__init__(sampling_cfg)
         self.voxel = sampling_cfg.voxel
         self.tolerance = sampling_cfg.get('tolerance', 0.01)
-        self.max_iter = sampling_cfg.get('max_iter', 20)
+        self.max_iter = sampling_cfg.get('max_iterations', sampling_cfg.get('max_iter', 20))
         self.ctx = {}
 
     @torch.no_grad()
     @PS.sample_in_range
     def forward(self, xyz: torch.Tensor, **kwargs) -> torch.Tensor:
-        indices, voxel, hash_table, ind_table = HierarchicalAdaptiveVoxelSamplingForGridQuery.hav_sampling_for_query(
-            xyz, self.sample_num, self.voxel, self.tolerance, self.max_iter)
-        self.ctx.update(voxel=voxel, voxel_hash=hash_table, hash2query=ind_table)
+        from .....ops.havs import havs_batch
+        indices, infos = havs_batch(xyz, self.sample_num, self.voxel, self.tolerance, self.max_iter, False, True)
+        self.ctx.update(voxels=infos[0], voxel_hashes=infos[1], hash2query=infos[2])
         return indices
 
 
-@sampler.register_module('hvcs_v2_info')
+@sampler.register_module('hvcs_v2_info', 'havs_info')
 class HierarchicalVoxelSamplingInfo(PointSampling):
     def __init__(self, sampling_cfg, *args, **kwargs):
         super(HierarchicalVoxelSamplingInfo, self).__init__(sampling_cfg)
         self.voxel = sampling_cfg.voxel
         self.tolerance = sampling_cfg.get('tolerance', 0.01)
-        self.max_iter = sampling_cfg.get('max_iter', 20)
+        self.max_iter = sampling_cfg.get('max_iterations', sampling_cfg.get('max_iter', 20))
 
     @torch.no_grad()
     def forward(self, xyz: torch.Tensor, **kwargs) -> (torch.Tensor, torch.Tensor, torch.Tensor):
-        from .....ops.hvcs import hvcs_cuda
-        res = hvcs_cuda.voxel_size_experiments(xyz, self.sample_num, self.voxel, self.tolerance, self.max_iter)
-        ind, voxel, num = res
-        return ind, voxel, num
+        from .....ops.havs import havs_batch
+        indices, infos = havs_batch(xyz, self.sample_num, self.voxel, self.tolerance, self.max_iter, True, False)
+        voxel_sizes = infos[0]
+        num_valid_voxels = infos[1]
+        return indices, voxel_sizes, num_valid_voxels
 
 
 @sampler.register_module('hvcs_stack')

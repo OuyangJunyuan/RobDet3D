@@ -1,4 +1,3 @@
-import _init_path
 import time
 import argparse
 from tqdm import tqdm

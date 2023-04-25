@@ -17,9 +17,9 @@ from visualization_msgs.msg import MarkerArray, Marker
 from geometry_msgs.msg import Point
 from rospkg.rospack import get_package_name
 
-cfg_file = PROJECT_ROOT / 'configs/iassd/wzh/iassd_hvcsx2_gqx2_sim.py'
-ckpt_file = PROJECT_ROOT / 'tools/models/wzh/iassd_hvcsx2_gqx2_sim_1x4_80e_kitti_peds_fov90(kitti_pretrain).pth'
-ros_topic_in = "/os1_cloud_node/points"
+cfg_file = PROJECT_ROOT / 'configs/iassd/wzh/iassd_hvcsx2_gqx2_exp.py'
+ckpt_file = PROJECT_ROOT / 'tools/models/wzh/iassd_hvcsx2_gqx2_exp_1x4_80e_kitti_peds_fov90(default)(kitti-pretrain).pth'
+ros_topic_in = "/ouster/points"  # "/os1_cloud_node/points"
 ros_topic_out = "objects"
 
 

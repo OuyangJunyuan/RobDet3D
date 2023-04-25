@@ -40,3 +40,22 @@ accelerate-launch tools/train.py --cfg configs/iassd/wy/iassd_hvcsx2_gqx2_4x2_80
 2023-04-21 01:56:11,568   INFO  recall_roi_0.7: 0.0
 2023-04-21 01:56:11,568   INFO  recall_rcnn_0.7: 0.22388059701492538
 ```
+---
+# 直接用实物的kitti-pretrain得到
+```shell
+2023-04-26 21:58:14,508   INFO  recall_roi_0.3: 0.0
+2023-04-26 21:58:14,508   INFO  recall_rcnn_0.3: 0.821917808219178
+2023-04-26 21:58:14,508   INFO  recall_roi_0.5: 0.0
+2023-04-26 21:58:14,508   INFO  recall_rcnn_0.5: 0.3287671232876712
+2023-04-26 21:58:14,508   INFO  recall_roi_0.7: 0.0
+2023-04-26 21:58:14,508   INFO  recall_rcnn_0.7: 0.0
+```
+# kitti-pretrain 
+```shell
+2023-04-26 22:48:29,332   INFO  recall_roi_0.3: 0.0
+2023-04-26 22:48:29,332   INFO  recall_rcnn_0.3: 0.9726027397260274
+2023-04-26 22:48:29,332   INFO  recall_roi_0.5: 0.0
+2023-04-26 22:48:29,332   INFO  recall_rcnn_0.5: 0.726027397260274
+2023-04-26 22:48:29,333   INFO  recall_roi_0.7: 0.0
+2023-04-26 22:48:29,333   INFO  recall_rcnn_0.7: 0.1917808219178082
+```

@@ -10,7 +10,7 @@ DATASET.DATA_PROCESSOR = [
     dict(NAME='shuffle_points',
          SHUFFLE_ENABLED={'train': True, 'test': False}),
     dict(NAME='sample_points',
-         NUM_POINTS={'train': 16384, 'test': 16384})
+         NUM_POINTS={'train': 16384, 'test': 2000})
 ]
 DATASET.DATA_AUGMENTOR.AUG_CONFIG_LIST.append(
     dict(NAME='random_box_noise',
@@ -81,7 +81,7 @@ MODEL = dict(
     ),
     POST_PROCESSING=dict(
         EVAL_METRIC='kitti',
-        SCORE_THRESH=0.5,
+        SCORE_THRESH=0.4,
         OUTPUT_RAW_SCORE=False,
         RECALL_THRESH_LIST=[0.3, 0.5, 0.7],
         NMS_CONFIG=dict(NMS_TYPE='nms_gpu',

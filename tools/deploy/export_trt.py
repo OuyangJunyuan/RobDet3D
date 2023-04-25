@@ -5,7 +5,7 @@ import tensorrt as trt
 import pycuda.driver as cuda
 import pycuda.autoinit  # this automatically init the cuda
 
-from rd3d.api import demo
+from rd3d.api import quick_demo
 from utils import load_plugins
 from utils.calibrator import Calibrator
 
@@ -81,7 +81,7 @@ if __name__ == '__main__':
     parser.add_argument('--onnx', type=Path)
     parser.add_argument('--log', default="WARNING")
     parser.add_argument('--type', type=str, default="FP32")
-    _, dataloader, args = demo(parser)
+    _, dataloader, args = quick_demo(parser)
 
     fold = args.onnx.parent
     file = args.onnx.stem

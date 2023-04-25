@@ -23,7 +23,7 @@ def set_random_seed(seed=0, deterministic=False):
         torch.backends.cudnn.benchmark = False
 
 
-def demo(parser=None):
+def quick_demo(parser=None):
     import time
     import argparse
     from ..utils.base import Hook
@@ -35,10 +35,14 @@ def demo(parser=None):
         parser = argparse.ArgumentParser() if parser is None else parser
         parser.add_argument('--cfg_file', type=str, default="configs/iassd/iassd_4x8_80e_kitti_3cls.py",
                             help='specify the config for training')
-        parser.add_argument('--ckpt', type=str, default=None, help='checkpoint to start from')
-        parser.add_argument('--set', dest='set_cfgs', default=None, nargs='...', help='set extra config keys if needed')
-        parser.add_argument('--seed', type=int, default=None, help='random seed')
-        parser.add_argument('--batch', type=int, default=None, help='batch_size')
+        parser.add_argument('--ckpt', type=str, default=None,
+                            help='checkpoint to start from')
+        parser.add_argument('--set', dest='set_cfgs', default=None, nargs='...',
+                            help='set extra config keys if needed')
+        parser.add_argument('--seed', type=int, default=None,
+                            help='random seed')
+        parser.add_argument('--batch', type=int, default=None,
+                            help='batch_size')
         return parser
 
     @Hook.auto

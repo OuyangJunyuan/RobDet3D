@@ -4,7 +4,7 @@ nsys profile -o profile --capture-range cudaProfilerApi python tools/deploy/trt_
 or
 python tools/deploy/trt_profile.py --engine tools/models/trt/iassd_hvcsx2_4x8_80e_kitti_3cls\(export\).engine --batch 1 --build_in
 """
-from rd3d.api import demo
+from rd3d.api import quick_demo
 
 
 def evaluate(engine_file, dataloader, use_build_in, num_points):
@@ -78,7 +78,7 @@ def main():
     parser.add_argument('--engine', type=Path)
     parser.add_argument('--build_in', action='store_true', default=False)
     parser.add_argument('--points', type=int, default=16384)
-    _, dataloader, args = demo(parser)
+    _, dataloader, args = quick_demo(parser)
 
     use_build_in = args.build_in
     engine_file = args.engine
