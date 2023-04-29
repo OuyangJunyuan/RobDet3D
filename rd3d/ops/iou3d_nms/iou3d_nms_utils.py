@@ -23,7 +23,7 @@ class NMS3D(torch.autograd.Function):
             "rd3d::NMSBEV", boxes, scores,
             score_threshold_f=score_thresh,
             iou_threshold_f=iou_thresh,
-            num_post_nms_i=num_post_nms,
+            num_max_nms_i=num_post_nms,
             outputs=3
         )
 

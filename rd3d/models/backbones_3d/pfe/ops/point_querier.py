@@ -52,7 +52,7 @@ def ball_query_cnt(radius: float, nsample: int, xyz: torch.Tensor, new_xyz: torc
         def symbolic(g: torch._C.Graph, radius: float, nsample: int, xyz: torch.Tensor, new_xyz: torch.Tensor):
             return g.op(
                 "rd3d::BallQuery", xyz, new_xyz,
-                nsample_i=nsample,
+                num_neighbor_i=nsample,
                 radius_f=radius,
                 outputs=2
             )

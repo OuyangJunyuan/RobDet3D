@@ -6,5 +6,5 @@ class FPS(FarthestPointSampling):
     def symbolic(g, xyz, sample_num):
         return g.op(
             "rd3d::FPSampling", xyz,
-            sample_num_i=sample_num
+            num_sample_i=sample_num
         )

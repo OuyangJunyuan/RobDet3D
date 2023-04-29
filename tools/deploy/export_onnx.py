@@ -31,7 +31,7 @@ def demo():
     args = add_args().parse_args()
     cfg = parse_config(args)
     set_random_seed(cfg.RUN.seed)
-    logger = create_logger(stderr=False)
+    logger = create_logger(stderr=True)
     logger.info(f"seed: {cfg.RUN.seed}")
     """ build dataloaders & model """
     dataloader = build_dataloader(cfg.DATASET, cfg.RUN, training=False, logger=logger)
@@ -50,6 +50,7 @@ def export_onnx():
         torch.onnx.export(model,
                           (batch_dict, {}),
                           output_path,
+                          opset_version=11,
                           input_names=['points'],
                           output_names=['boxes', 'scores', 'nums'],
                           dynamic_axes={'points': {0: 'batch_size'},

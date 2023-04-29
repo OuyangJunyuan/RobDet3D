@@ -259,7 +259,7 @@ class CenterAwareSampling(PS):
         from .....utils.loss_utils import WeightedClassificationLoss
 
         super(CenterAwareSampling, self).__init__(sampling_cfg)
-        self.output_channels = len(self.cfg.get('class_names', self.cfg.get('class_name')))
+        self.output_channels = 1  # len(self.cfg.get('class_names'))
         self.mlps = self.build_mlps(self.cfg.mlps,
                                     in_channels=input_channels,
                                     out_channels=self.output_channels)
@@ -413,13 +413,16 @@ class HierarchicalAdaptiveVoxelSampling(PointSampling):
     @PS.sample_in_range
     def forward(self, xyz: torch.Tensor, **kwargs) -> torch.Tensor:
         from .....ops.havs import havs_batch
-        indices, infos = havs_batch(
+
+        indices = havs_batch(
             xyz, self.num_sample,
             self.voxel, self.tolerance, self.max_iter,
             self.keep_details, self.keep_hashes
         )
         if self.keep_details:
+            indices, *infos = indices
             self.return_dict.update(voxel_sizes=infos[0], num_voxels=infos[1], sampled_masks=infos[2])
         if self.keep_hashes:
+            indices, *infos = indices
             self.return_dict.update(voxel_sizes=infos[0], hash_tables=infos[1], subset_tables=infos[2])
         return indices

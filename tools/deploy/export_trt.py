@@ -9,6 +9,8 @@ from rd3d.api import quick_demo
 from utils import load_plugins
 from utils.calibrator import Calibrator
 
+print([pc.name for pc in trt.get_plugin_registry().plugin_creator_list])
+
 
 def load_and_check_onnx():
     onnx_model = onnx.load(fold / (file + '.onnx'))
