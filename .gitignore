@@ -30,3 +30,5 @@ version.py
 *.engine
 *.pdf
 **.qdrep
+/configs/iassd/wy/
+/configs/iassd/wzh/
