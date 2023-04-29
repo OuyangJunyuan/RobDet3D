@@ -1,4 +1,6 @@
 import torch
+from typing import List
+
 from .builder import querier
 from .....ops.pointnet2.pointnet2_batch import pointnet2_batch_cuda as cuda_ops_batch
 from .....ops.pointnet2.pointnet2_stack import pointnet2_stack_cuda as cuda_ops_stack
@@ -6,7 +8,7 @@ from .....ops.pointnet2.pointnet2_stack import pointnet2_stack_cuda as cuda_ops_
 
 @torch.no_grad()
 @querier.register_module('ball_old')
-def basic_ball_query(radius: float, nsample: int, xyz: torch.Tensor, new_xyz: torch.Tensor):
+def basic_ball_query(radius: float, nsample: int, xyz: torch.Tensor, new_xyz: torch.Tensor, **kwargs):
     """
     :param ctx:
     :param radius: float, radius of the balls
@@ -29,7 +31,7 @@ def basic_ball_query(radius: float, nsample: int, xyz: torch.Tensor, new_xyz: to
 
 @torch.no_grad()
 @querier.register_module('ball')
-def ball_query_cnt(radius: float, nsample: int, xyz: torch.Tensor, new_xyz: torch.Tensor):
+def ball_query_cnt(radius: float, nsample: int, xyz: torch.Tensor, new_xyz: torch.Tensor, **kwargs):
     class BallQuery(torch.autograd.Function):
 
         @staticmethod
@@ -59,17 +61,8 @@ def ball_query_cnt(radius: float, nsample: int, xyz: torch.Tensor, new_xyz: torc
 
 
 @torch.no_grad()
-@querier.register_module('grid_ball')
-def ball_query_cnt_by_grid(radius: float, nsample: int,
-                           xyz: torch.Tensor, new_xyz: torch.Tensor,
-                           voxels: torch.Tensor, voxel_hashes: torch.Tensor, hash2query: torch.Tensor):
-    from .....ops.havs import query_batch
-    return query_batch(radius, nsample, xyz, new_xyz, voxels, voxel_hashes, hash2query)
-
-
-@torch.no_grad()
 @querier.register_module('shell', 'ball_dilated')
-def ball_query_dilated(radius_in: float, radius_out: float, nsample: int, xyz: torch.Tensor, new_xyz: torch.Tensor):
+def ball_query_dilated(radius: List[float], nsample: int, xyz: torch.Tensor, new_xyz: torch.Tensor, **kwargs):
     """
     :param radius_in: float, radius of the inner balls
     :param radius_out: float, radius of the outer balls
@@ -80,6 +73,7 @@ def ball_query_dilated(radius_in: float, radius_out: float, nsample: int, xyz: t
         idx_cnt: (B, npoint) tensor with the number of grouped points for each ball query
         idx: (B, npoint, nsample) tensor with the indicies of the features that form the query balls
     """
+    radius_in, radius_out = radius
     assert radius_in < radius_out
     assert new_xyz.is_contiguous()
     assert xyz.is_contiguous()
@@ -96,7 +90,7 @@ def ball_query_dilated(radius_in: float, radius_out: float, nsample: int, xyz: t
 @torch.no_grad()
 @querier.register_module('ball_stack')
 def ball_query_stack(radius: float, nsample: int, xyz: torch.Tensor, xyz_batch_cnt: torch.Tensor,
-                     new_xyz: torch.Tensor, new_xyz_batch_cnt):
+                     new_xyz: torch.Tensor, new_xyz_batch_cnt, **kwargs):
     """
     Args:
         ctx:
@@ -123,3 +117,12 @@ def ball_query_stack(radius: float, nsample: int, xyz: torch.Tensor, xyz_batch_c
     empty_ball_mask = (idx[:, 0] == -1)
     idx[empty_ball_mask] = 0
     return empty_ball_mask, idx.long()
+
+
+@torch.no_grad()
+@querier.register_module('grid_ball')
+def ball_query_cnt_by_grid(radius: float, nsample: int,
+                           xyz: torch.Tensor, new_xyz: torch.Tensor,
+                           voxel_sizes: torch.Tensor, hash_tables: torch.Tensor, subset_tables: torch.Tensor, **kwargs):
+    from .....ops.havs import query_batch
+    return query_batch(radius, nsample, xyz, new_xyz, voxel_sizes, hash_tables, subset_tables)

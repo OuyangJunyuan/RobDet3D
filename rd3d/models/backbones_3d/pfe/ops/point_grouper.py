@@ -71,17 +71,24 @@ class AllPointGrouping(PointGrouping):
 @grouper.register_module('ball')
 class BallQueryPointGrouping(PointGrouping):
     def __init__(self, grouping_cfg, input_channels, *args, **kwargs):
-        super(BallQueryPointGrouping, self).__init__(grouping_cfg, input_channels)
-
-        radius = self.cfg.query.radius
-        self.radius = [radius] if isinstance(radius, float) else radius
+        super().__init__(grouping_cfg, input_channels)
+        self.sampler_return = {}
+        self.radius = self.cfg.query.radius
         self.neighbour = self.cfg.query.neighbour
-        querier_type = 'ball_dilated' if self.radius.__len__() > 1 else 'ball'
-        self.ctx = {}
-        if "ctx" in kwargs and kwargs["ctx"] and hasattr(kwargs["ctx"][0], "ctx"):
-            querier_type = "grid_ball"
-            self.ctx = kwargs["ctx"][0].ctx
-        self.querier = partial(querier.from_name(querier_type), *self.radius, self.neighbour)
+
+        if isinstance(self.radius, float):
+            if grouping_cfg.get("use_hash", False):
+                from .point_sampler import sampler
+                for s in kwargs["parent"].samplers:
+                    if isinstance(s, sampler.from_name("havs")):
+                        self.sampler_return = s.return_dict
+                self.querier = querier.from_name("grid_ball")
+            else:
+                self.querier = querier.from_name("ball")
+        elif isinstance(self.radius, list):
+            self.querier = querier.from_name("ball_dilated")
+        else:
+            raise NotImplemented
 
     def query_and_group(self, new_xyz: torch.Tensor, xyz: torch.Tensor, feats: torch.Tensor = None):
         """
@@ -92,13 +99,9 @@ class BallQueryPointGrouping(PointGrouping):
              empty_mask:    (B, M) tensor with the number of grouped points for each ball query
              new_feats:     (B, M, K, {3 +} C)
         """
-        if self.ctx:
-            group_member_cnt, group_member_ind = self.querier(xyz, new_xyz,
-                                                              self.ctx["voxels"],
-                                                              self.ctx["voxel_hashes"],
-                                                              self.ctx["hash2query"])
-        else:
-            group_member_cnt, group_member_ind = self.querier(xyz, new_xyz)  # (B,M) (B,M,K)
+        group_member_cnt, group_member_ind = self.querier(
+            self.radius, self.neighbour, xyz, new_xyz, **self.sampler_return
+        )  # (B,M) (B,M,K)
         empty_mask = group_member_cnt > 0
 
         grouped_xyz = gather(xyz, group_member_ind) - new_xyz.unsqueeze(-2)  # (B,M,K,3)

@@ -1,15 +1,9 @@
-import numpy as np
 import torch
 import torch.nn as nn
-from ....utils.common_utils import gather, ScopeTimer, apply1d
 from .ops.builder import sampler, grouper, aggregation
 
 
 class GeneralPointSetAbstraction(nn.Module):
-    """
-    stack of multi samplers and groupers
-    """
-
     def __init__(self, ab_layer_cfg, input_channels: int):
         super(GeneralPointSetAbstraction, self).__init__()
         self.cfg = ab_layer_cfg
@@ -17,17 +11,20 @@ class GeneralPointSetAbstraction(nn.Module):
 
         self.samplers = nn.ModuleList()
         for sampler_cfg in self.cfg.get('samplers', []):
-            self.samplers.append(sampler.from_cfg(sampler_cfg, input_channels=self.input_channels))
-        self.sampler_output_indices = sum([s.indices_as_output for s in self.samplers]) != 0
+            self.samplers.append(sampler.from_cfg(sampler_cfg, parent=self, input_channels=self.input_channels))
 
         self.groupers = nn.ModuleList()
         for grouper_cfg in self.cfg.get('groupers', []):
-            self.groupers.append(grouper.from_cfg(grouper_cfg, input_channels=self.input_channels, ctx=self.samplers))
+            self.groupers.append(grouper.from_cfg(grouper_cfg, parent=self, input_channels=self.input_channels))
 
-        self.agg = aggregation.from_cfg(self.cfg.aggregation, input_channels=[g.output_channels for g in self.groupers])
+        self.agg = aggregation.from_cfg(
+            self.cfg.aggregation,
+            input_channels=[g.output_channels for g in self.groupers]
+        )
 
         self.output_channels = self.agg.output_channels
         self.need_new_feats = True in [grouping.need_query_features for grouping in self.groupers]
+        self.sampler_output_indices = True in [s.output_indices for s in self.samplers]
 
     def assign_targets(self, batch_dict):
         # handle target assigment in submodule
@@ -53,8 +50,7 @@ class GeneralPointSetAbstraction(nn.Module):
             sa_loss = sa_loss + get_submodule_loss(module)
         return sa_loss, tb_dict
 
-    def forward(self,
-                xyz: torch.Tensor, feats: torch.Tensor = None, bid=None,
+    def forward(self, xyz: torch.Tensor, feats: torch.Tensor = None, bid=None,
                 new_xyz=None, new_feats=None, new_bid=None) -> (torch.Tensor, torch.Tensor, torch.Tensor):
         """
         Args:
@@ -69,6 +65,7 @@ class GeneralPointSetAbstraction(nn.Module):
             new_xyz: (B, M, 3)
             new_feats: (B, M, Co)
         """
+        from ....utils.common_utils import gather
         if new_xyz is None:
             if self.sampler_output_indices:
                 sample_ind = [s(xyz=xyz, feats=feats, bid=bid) for s in self.samplers]  # (B,M)
@@ -225,6 +222,7 @@ class PointVoteInsCenter(nn.Module):
             vote_end: the coords voted from start_xyz                   (B, M, 3)
             vote_end_feats: the feats of vote_end                       (B, M, Co)
         """
+        from ....utils.common_utils import apply1d
         vote_offsets = apply1d(self.vote_layers, start_feats)
 
         max_translation = start_xyz.new_tensor(self.max_translation_range)[None, None, ...]

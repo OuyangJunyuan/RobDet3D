@@ -119,7 +119,7 @@ void QueryByPointHashingBatchLauncher(const uint32_t num_batch, const uint32_t n
 
 void QueryByPointHashingBatchWrapper(at::Tensor &queries, at::Tensor &sources,
                                      at::Tensor &queried_ids, at::Tensor &num_queried,
-                                     at::Tensor &voxels, at::Tensor &hash_tables, at::Tensor &coord2query,
+                                     at::Tensor &voxel_sizes, at::Tensor &hash_tables, at::Tensor &coord2query,
                                      const double search_radius, const long num_neighbours) {
 
     const int64_t num_batch{sources.size(0)};
@@ -134,7 +134,7 @@ void QueryByPointHashingBatchWrapper(at::Tensor &queries, at::Tensor &sources,
     QueryByPointHashingBatchLauncher(
             num_batch, num_src, num_qry, num_nei, num_hash,
             search_radius,
-            (float3 (*)[3]) voxels.data_ptr(),
+            (float3 (*)[3]) voxel_sizes.data_ptr(),
             (uint32_t *) hash_tables.data_ptr(),
             (uint32_t *) coord2query.data_ptr(),
             (float3 *) queries.data_ptr(),

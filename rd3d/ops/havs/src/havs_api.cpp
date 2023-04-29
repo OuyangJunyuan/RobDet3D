@@ -40,7 +40,7 @@ std::vector<at::Tensor> HAVSamplingBatchWrapper(at::Tensor &sources,
  * @param sources the source points to be queried.
  * @param queried_ids the neighbors' index in source of each query.
  * @param num_queried the number of neighbors in sources of each query.
- * @param voxels the voxel size that use to sample query point from sources.
+ * @param voxel_sizes the voxel size that use to sample query point from sources.
  * @param hash_tables voxel-hashing table, used to exam if a voxel is non-empty.
  * @param coord2query the table that map a hash-value to queries' index.
  * @param search_radius the radius of nearest points searching.
@@ -48,7 +48,7 @@ std::vector<at::Tensor> HAVSamplingBatchWrapper(at::Tensor &sources,
  */
 void QueryByPointHashingBatchWrapper(at::Tensor &queries, at::Tensor &sources,
                                      at::Tensor &queried_ids, at::Tensor &num_queried,
-                                     at::Tensor &voxels, at::Tensor &hash_tables, at::Tensor &coord2query,
+                                     at::Tensor &voxel_sizes, at::Tensor &hash_tables, at::Tensor &coord2query,
                                      double search_radius, long num_neighbours);
 
 

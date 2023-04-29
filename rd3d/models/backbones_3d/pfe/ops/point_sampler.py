@@ -1,9 +1,7 @@
 import time
-
 import torch
 import torch.nn as nn
 from .builder import sampler
-from .....ops.pointnet2.pointnet2_batch import pointnet2_batch_cuda as cuda_ops
 
 
 class PointSampling(nn.Module):
@@ -11,12 +9,11 @@ class PointSampling(nn.Module):
         super(PointSampling, self).__init__()
         self.cfg = sampling_cfg
         self.range = self.cfg.get('range', None)
-        self.sample_num = self.cfg.sample
-        self.indices_as_output = True
+        self.num_sample = self.cfg.sample
+        self.output_indices = True
 
     @staticmethod
     def sample_in_range(func):
-        # @PointSampling.measure_runtime
         def wrapper(self, xyz: torch.Tensor, feats: torch.Tensor = None, bid: torch.Tensor = None, **kwargs):
             if self.range is None or (self.range[0] == 0 and self.range[1] == xyz.shape[1]):
                 return func(self, xyz=xyz, feats=feats, bid=bid, **kwargs)
@@ -25,21 +22,6 @@ class PointSampling(nn.Module):
                 xyz_in_range = xyz[:, self.range[0]:self.range[1], ...].contiguous() if xyz is not None else xyz
                 feats_in_range = feats[:, self.range[0]:self.range[1], ...].contiguous() if feats is not None else feats
                 return func(self, xyz=xyz_in_range, feats=feats_in_range, bid=bid_in_range, **kwargs) + self.range[0]
-
-        return wrapper
-
-    @staticmethod
-    def measure_runtime(func):
-        def wrapper(self, *args, **kwargs):
-            if not hasattr(self, 'runtime'):
-                self.runtime = 0
-            torch.cuda.synchronize()
-            t1 = time.time()
-            ret = func(self, *args, **kwargs)
-            torch.cuda.synchronize()
-            t2 = time.time()
-            self.runtime += t2 - t1
-            return ret
 
         return wrapper
 
@@ -62,65 +44,40 @@ class PointSampling(nn.Module):
 PS = PointSampling
 
 
-class FPS(torch.autograd.Function):
-    @staticmethod
-    def forward(ctx, xyz, sample_num):
-        """
-        Uses iterative farthest point sampling to select a set of npoint features that have the largest
-        minimum distance
-        :param xyz: (B, N, 3) where N > npoint
-        :return:
-             output: (B, npoint) tensor containing the set
-        """
-        b, n, _ = xyz.size()
-        output = torch.cuda.IntTensor(b, sample_num)
-        temp = torch.cuda.FloatTensor(b, n).fill_(1e10)
-
-        cuda_ops.farthest_point_sampling_wrapper(b, n, sample_num, xyz, temp, output)
-        return output
-
-    @staticmethod
-    def symbolic(g, xyz, sample_num):
-        return g.op(
-            "rd3d::FPSampling", xyz,
-            sample_num_i=sample_num
-        )
-
-
-fps = FPS.apply
-
-
 @sampler.register_module('select', 'index')
-class IndexPointSampling(PointSampling):
+class IndexPointSampling(PS):
     def __init__(self, sampling_cfg, *args, **kwargs):
         super(IndexPointSampling, self).__init__(sampling_cfg)
 
     @torch.no_grad()
     @PS.sample_in_range
     def forward(self, xyz: torch.Tensor, **kwargs) -> torch.Tensor:
-        output = torch.arange(self.sample_num[0], self.sample_num[1], dtype=torch.long, device=xyz.device)
-        return output.expand(xyz.shape[0], -1).contiguous()
+        indices = torch.arange(self.num_sample[0], self.num_sample[1], dtype=torch.long, device=xyz.device)
+        return indices.expand(xyz.shape[0], -1).contiguous()
 
 
 @sampler.register_module('rps', 'rand')
-class RandomPointSampling(PointSampling):
+class RandomPointSampling(PS):
     def __init__(self, sampling_cfg, *args, **kwargs):
         super(RandomPointSampling, self).__init__(sampling_cfg)
 
     @torch.no_grad()
+    @PS.sample_in_range
     def forward(self, xyz: torch.Tensor, **kwargs) -> torch.Tensor:
-        bs, n = xyz.shape[0], xyz.shape[1] if self.range is None else self.range[1] - self.range[0]
-        ind = torch.vstack(
-            [torch.randperm(n, dtype=torch.long, device=xyz.device)[:self.sample_num] for _ in range(bs)]
+        indices = torch.vstack(
+            [
+                torch.randperm(xyz.shape[1], dtype=torch.long, device=xyz.device)[:self.num_sample]
+                for _ in range(xyz.shape[0])
+            ]
         )
-        return ind if self.range is None else ind + self.range[0]
+        return indices
 
 
 @sampler.register_module('rvs')
-class RandomVoxelSampling(PointSampling):
+class RandomVoxelSampling(PS):
     def __init__(self, sampling_cfg, *args, **kwargs):
         super(RandomVoxelSampling, self).__init__(sampling_cfg)
-        self.indices_as_output = False
+        self.output_indices = False
         self.voxel = sampling_cfg.voxel
         self.coors_range = sampling_cfg.coors_range
         self.channel = sampling_cfg.get('channel', 3)
@@ -141,7 +98,7 @@ class RandomVoxelSampling(PointSampling):
             raise NotImplementedError
 
         sampled_num = len(sampled_xyz)
-        resample_num = self.sample_num - sampled_num
+        resample_num = self.num_sample - sampled_num
         if resample_num > 0:
             indices = torch.concat([torch.arange(0, sampled_num), torch.randint(sampled_num, (resample_num,))])
             sampled_xyz = sampled_xyz[indices]
@@ -151,7 +108,7 @@ class RandomVoxelSampling(PointSampling):
         from spconv.pytorch.utils import PointToVoxel
         return PointToVoxel(vsize_xyz=voxel,
                             coors_range_xyz=self.coors_range,
-                            max_num_voxels=self.sample_num,
+                            max_num_voxels=self.num_sample,
                             max_num_points_per_voxel=self.max_pts_per_voxel,
                             num_point_features=self.channel,
                             device=device)
@@ -160,7 +117,7 @@ class RandomVoxelSampling(PointSampling):
     def forward(self, xyz: torch.Tensor, **kwargs) -> torch.Tensor:
         if self.adaptive:
             from easydict import EasyDict
-            self.gen = sampler.from_cfg(EasyDict(name='hvcs_v2_info', sample=self.sample_num, voxel=[0.4, 0.4, 0.35]))
+            self.gen = sampler.from_cfg(EasyDict(name='hvcs_v2_info', sample=self.num_sample, voxel=[0.4, 0.4, 0.35]))
             voxels = self.gen(xyz)[1].tolist()
             sampled_xyz = torch.cat([self.one_sample(self.build_voxel_gen(voxels[i], xyz.device), xyz[i])
                                      for i in range(xyz.shape[0])], dim=0)
@@ -173,19 +130,20 @@ class RandomVoxelSampling(PointSampling):
 
 
 @sampler.register_module('fps', 'd-fps')
-class FarthestPointSampling(PointSampling):
+class FarthestPointSampling(PS):
     def __init__(self, sampling_cfg, *args, **kwargs):
         super(FarthestPointSampling, self).__init__(sampling_cfg)
 
     @torch.no_grad()
     @PS.sample_in_range
     def forward(self, xyz: torch.Tensor, **kwargs) -> torch.Tensor:
-        output = fps(xyz, self.sample_num)
-        return output.long()
+        from .....ops.pointnet2.pointnet2_batch import FPS
+        indices = FPS.apply(xyz, self.num_sample)
+        return indices.long()
 
 
 @sampler.register_module('f-fps')
-class FeatureFarthestPointSampling(PointSampling):
+class FeatureFarthestPointSampling(PS):
     def __init__(self, sampling_cfg, *args, **kwargs):
         super(FeatureFarthestPointSampling, self).__init__(sampling_cfg)
         self.weight_gamma = self.cfg.gamma
@@ -193,27 +151,25 @@ class FeatureFarthestPointSampling(PointSampling):
     @torch.no_grad()
     @PS.sample_in_range
     def forward(self, xyz: torch.Tensor, feats: torch.Tensor = None, **kwargs) -> torch.Tensor:
+        from .....ops.pointnet2.pointnet2_batch import furthest_point_sample_matrix
         dist = torch.cdist(xyz, xyz)
         if feats is not None:
             dist += torch.cdist(feats, feats) * self.weight_gamma
 
-        b, n, _ = dist.size()
-        output = torch.cuda.IntTensor(b, self.sample_num)
-        temp = torch.cuda.FloatTensor(b, n).fill_(1e10)
-        cuda_ops.furthest_point_sampling_matrix_wrapper(b, n, self.sample_num, dist, temp, output)
-        return output.long()
+        indices = furthest_point_sample_matrix(dist, self.num_sample)
+        return indices.long()
 
 
 @sampler.register_module('s-fps')
-class SemanticFarthestPointSampling(PointSampling):
+class SemanticFarthestPointSampling(PS):
     def __init__(self, sampling_cfg, input_channels, *args, **kwargs):
+        from .....utils.loss_utils import WeightedBinaryCrossEntropyLoss
+
         super(SemanticFarthestPointSampling, self).__init__(sampling_cfg)
-        assert 'mlps' in sampling_cfg, f'key<mlps> is need for {self.__name__}'
 
         self.weight_gamma = self.cfg.gamma
         self.mlps = self.build_mlps(self.cfg.mlps, in_channels=input_channels, out_channels=1)
         self.train_dict = {}
-        from .....utils.loss_utils import WeightedBinaryCrossEntropyLoss
         self.loss_func = WeightedBinaryCrossEntropyLoss()
 
     def assign_targets(self, batch_dict):
@@ -285,32 +241,29 @@ class SemanticFarthestPointSampling(PointSampling):
 
     @PS.sample_in_range
     def forward(self, xyz: torch.Tensor, feats: torch.Tensor, **kwargs) -> torch.Tensor:
+        from .....ops.pointnet2.pointnet2_batch import furthest_point_sample_weights
         b, n, c = feats.size()
 
         scores = self.mlps(feats.view(-1, c)).view(b, n)  # (B, N)
+        weights = scores.sigmoid() ** self.weight_gamma
+        indices = furthest_point_sample_weights(xyz, weights, self.num_sample)
+
         if self.training:
             self.train_dict.update({'coords': xyz, 'scores': scores.view(-1, 1)})
-
-        weights = scores.sigmoid() ** self.weight_gamma
-
-        output = torch.cuda.IntTensor(b, self.sample_num)
-        temp = torch.cuda.FloatTensor(b, n).fill_(1e10)
-
-        cuda_ops.furthest_point_sampling_weights_wrapper(b, n, self.sample_num, xyz, weights, temp, output)
-        return output.long()
+        return indices.long()
 
 
 @sampler.register_module('ctr_aware', 'ctr')
-class CenterAwareSampling(PointSampling):
+class CenterAwareSampling(PS):
     def __init__(self, sampling_cfg, input_channels, *args, **kwargs):
+        from .....utils.loss_utils import WeightedClassificationLoss
+
         super(CenterAwareSampling, self).__init__(sampling_cfg)
-        assert 'mlps' in sampling_cfg, f'key<mlps> is need for {self.__name__}'
-        self.output_channels = len(self.cfg.get('class_names', ['dummy']))
+        self.output_channels = len(self.cfg.get('class_names', self.cfg.get('class_name')))
         self.mlps = self.build_mlps(self.cfg.mlps,
                                     in_channels=input_channels,
                                     out_channels=self.output_channels)
         self.train_dict = {}
-        from .....utils.loss_utils import WeightedClassificationLoss
         self.loss_func = WeightedClassificationLoss()
 
     def assign_targets(self, batch_dict):
@@ -436,12 +389,11 @@ class CenterAwareSampling(PointSampling):
     def forward(self, xyz: torch.Tensor, feats: torch.Tensor, **kwargs) -> torch.Tensor:
         b, n, c = feats.shape
         weights = self.mlps(feats.view(-1, c)).view(b, n, -1)
-        if self.training:
-            self.train_dict.update({'point_cls_preds': weights, 'point_coords': xyz})
-
         cls_features_max, _ = weights.max(dim=-1)
         score_pred = torch.sigmoid(cls_features_max)  # (b, n)
-        _, sample_idx = torch.topk(score_pred, self.sample_num, dim=-1)
+        _, sample_idx = torch.topk(score_pred, self.num_sample, dim=-1)
+        if self.training:
+            self.train_dict.update({'point_cls_preds': weights, 'point_coords': xyz})
         return sample_idx.long()
 
 
@@ -453,60 +405,21 @@ class HierarchicalAdaptiveVoxelSampling(PointSampling):
         self.voxel = sampling_cfg.voxel
         self.tolerance = sampling_cfg.get('tolerance', 0.01)
         self.max_iter = sampling_cfg.get('max_iterations', sampling_cfg.get('max_iter', 20))
+        self.keep_details = sampling_cfg.get('return_detail', False)
+        self.keep_hashes = sampling_cfg.get('return_hash', False)
+        self.return_dict = {}
 
     @torch.no_grad()
     @PS.sample_in_range
     def forward(self, xyz: torch.Tensor, **kwargs) -> torch.Tensor:
         from .....ops.havs import havs_batch
-        indices = havs_batch(xyz, self.sample_num, self.voxel, self.tolerance, self.max_iter)
+        indices, infos = havs_batch(
+            xyz, self.num_sample,
+            self.voxel, self.tolerance, self.max_iter,
+            self.keep_details, self.keep_hashes
+        )
+        if self.keep_details:
+            self.return_dict.update(voxel_sizes=infos[0], num_voxels=infos[1], sampled_masks=infos[2])
+        if self.keep_hashes:
+            self.return_dict.update(voxel_sizes=infos[0], hash_tables=infos[1], subset_tables=infos[2])
         return indices
-
-
-@sampler.register_module('hvcs_for_query', 'havs_for_query')
-class HierarchicalAdaptiveVoxelSamplingForGridQuery(PointSampling):
-
-    def __init__(self, sampling_cfg, *args, **kwargs):
-        super(HierarchicalAdaptiveVoxelSamplingForGridQuery, self).__init__(sampling_cfg)
-        self.voxel = sampling_cfg.voxel
-        self.tolerance = sampling_cfg.get('tolerance', 0.01)
-        self.max_iter = sampling_cfg.get('max_iterations', sampling_cfg.get('max_iter', 20))
-        self.ctx = {}
-
-    @torch.no_grad()
-    @PS.sample_in_range
-    def forward(self, xyz: torch.Tensor, **kwargs) -> torch.Tensor:
-        from .....ops.havs import havs_batch
-        indices, infos = havs_batch(xyz, self.sample_num, self.voxel, self.tolerance, self.max_iter, False, True)
-        self.ctx.update(voxels=infos[0], voxel_hashes=infos[1], hash2query=infos[2])
-        return indices
-
-
-@sampler.register_module('hvcs_v2_info', 'havs_info')
-class HierarchicalVoxelSamplingInfo(PointSampling):
-    def __init__(self, sampling_cfg, *args, **kwargs):
-        super(HierarchicalVoxelSamplingInfo, self).__init__(sampling_cfg)
-        self.voxel = sampling_cfg.voxel
-        self.tolerance = sampling_cfg.get('tolerance', 0.01)
-        self.max_iter = sampling_cfg.get('max_iterations', sampling_cfg.get('max_iter', 20))
-
-    @torch.no_grad()
-    def forward(self, xyz: torch.Tensor, **kwargs) -> (torch.Tensor, torch.Tensor, torch.Tensor):
-        from .....ops.havs import havs_batch
-        indices, infos = havs_batch(xyz, self.sample_num, self.voxel, self.tolerance, self.max_iter, True, False)
-        voxel_sizes = infos[0]
-        num_valid_voxels = infos[1]
-        return indices, voxel_sizes, num_valid_voxels
-
-
-@sampler.register_module('hvcs_stack')
-class HierarchicalVoxelSamplingStack(HierarchicalAdaptiveVoxelSampling):
-    def __init__(self, sampling_cfg, *args, **kwargs):
-        super(HierarchicalVoxelSamplingStack, self).__init__(sampling_cfg)
-
-    @torch.no_grad()
-    @PS.sample_in_range
-    def forward(self, xyz: torch.Tensor, bid: torch.Tensor, **kwargs) -> torch.Tensor:
-        bs = kwargs.get('batch_size', bid.max())
-        ind = hvcs_ops.potential_voxel_size_stack(bid, xyz, bs,
-                                                  self.sample_num, self.voxel, self.tolerance, self.max_iter)
-        return ind

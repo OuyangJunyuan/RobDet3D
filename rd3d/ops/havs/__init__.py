@@ -18,7 +18,7 @@ class HAVSampler(torch.autograd.Function):
         infos = havs_cuda.havs_batch(
             xyz, indices, *voxel_size, tolerance, max_iter, return_voxel_infos, return_query_infos
         )
-        return (indices, infos) if return_voxel_infos or return_query_infos else indices
+        return indices, infos
 
     @staticmethod
     def symbolic(g: torch._C.Graph,
