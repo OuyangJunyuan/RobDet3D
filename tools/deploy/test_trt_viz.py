@@ -4,7 +4,7 @@ import numpy as np
 import pycuda.driver as cuda
 import tensorrt as trt
 import pycuda.autoinit
-from rd3d.api import demo
+from rd3d.api import quick_demo
 import ctypes
 from utils import load_plugins
 import argparse
@@ -12,7 +12,7 @@ import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument("--engine")
 print([pc.name for pc in trt.get_plugin_registry().plugin_creator_list])
-model, dataloader, args = demo(parser)
+model, dataloader, args = quick_demo(parser)
 model.cuda()
 model.eval()
 

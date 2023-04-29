@@ -117,19 +117,27 @@ if __name__ == '__main__':
                 ],
             ),
             make_cuda_ext(
-                name='hvcs_cuda',
-                module='rd3d.ops.hvcs',
+                # name of the share lib
+                name='havs_cuda',
+                # path to the sources
+                module='rd3d.ops.havs',
+                # the stem name of .cpp and .cu should be difference.
                 sources=[
-                    'src/havs_api.cpp',  # .cpp 和 .cu 文件不要重名
+                    'src/havs_api.cpp',
                     'src/havs_batch.cu',
-                    'src/havs_stack.cu',
-                    'src/havs_query_batch.cu',
-                    'src/common.cu',
+                    # 'src/havs_stack.cu',
+                    'src/query_batch.cu',
                 ],
                 # For torch1.13, see dynamic parallelism https://docs-preview.pytorch.org/78225/cpp_extension.html#
+                # library_dirs=['cuda'],
+                # include_dirs=[],
+                # libraries=['cudadevrt'],  # must be pass cudadevrt to host linker for final target
+                # # dlink_libraries=["dlink_lib"],
                 # dlink=True,
-                # dlink_libraries=["dlink_lib"],
-                # extra_compile_args={'nvcc': ['-O2', '-rdc=true'], }
+                # extra_compile_args={
+                #     'nvcc': ['-O3', '-rdc=true'],
+                #     'nvcc_dlink': ['']
+                # },
             ),
         ],
     )

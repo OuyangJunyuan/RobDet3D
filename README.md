@@ -2,6 +2,7 @@
 This repository is deeply inspired by [OpenPCDet](https://github.com/open-mmlab/OpenPCDet.git) and [MMDetection3D](https://github.com/open-mmlab/mmdetection3d.git), and incorporates their advantages.
 In this repo, we develop `HAVSampler` and `GridBallQuery` to speed up `poin-based` model and its deployment.
 # INSTALL
+cuda11.6 and pytorch1.13 are required for using dynamic parallelism with pytorch.
 ```bash
 pip install -r requirements.txt
 pip install spconv-cuxxx(e.g.cu113)

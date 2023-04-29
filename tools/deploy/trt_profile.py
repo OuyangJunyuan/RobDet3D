@@ -4,10 +4,10 @@ nsys profile -o profile --capture-range cudaProfilerApi python tools/deploy/trt_
 or
 python tools/deploy/trt_profile.py --engine tools/models/trt/iassd_hvcsx2_4x8_80e_kitti_3cls\(export\).engine --batch 1 --build_in
 """
-from rd3d.api import demo
+from rd3d.api import quick_demo
 
 
-def evaluate(engine_file, dataloader, use_build_in):
+def evaluate(engine_file, dataloader, use_build_in, num_points):
     import torch
     import numpy as np
     import pycuda.driver as cuda
@@ -24,13 +24,13 @@ def evaluate(engine_file, dataloader, use_build_in):
     bs = dataloader.batch_size
     with engine.create_execution_context() as context:
         stream = cuda.Stream()
-        context.set_binding_shape(engine.get_binding_index("points"), (bs, 16384, 4))
+        context.set_binding_shape(engine.get_binding_index("points"), (bs, num_points, 4))
 
         assert context.all_binding_shapes_specified
         batch_dict = next(iter(dataloader))
         dataloader.dataset.load_data_to_gpu(batch_dict)
 
-        h_inputs = {'points': np.zeros((bs, 16384, 4), dtype=float)}
+        h_inputs = {'points': np.zeros((bs, num_points, 4), dtype=float)}
         d_inputs = {}
         h_outputs = {}
         d_outputs = {}
@@ -77,12 +77,13 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--engine', type=Path)
     parser.add_argument('--build_in', action='store_true', default=False)
-    _, dataloader, args = demo(parser)
+    parser.add_argument('--points', type=int, default=16384)
+    _, dataloader, args = quick_demo(parser)
 
     use_build_in = args.build_in
     engine_file = args.engine
 
-    evaluate(engine_file, dataloader, use_build_in)
+    evaluate(engine_file, dataloader, use_build_in, args.points)
 
 
 if __name__ == "__main__":

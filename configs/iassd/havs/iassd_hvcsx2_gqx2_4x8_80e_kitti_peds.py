@@ -1,5 +1,5 @@
-from ..base.datasets.kitti_3cls import *
-from ..base.runtime.adam_onecycle_8_80e import *
+from ...base.datasets.kitti_peds import *
+from ...base.runtime.adam_onecycle_8_80e import *
 
 DATASET.DATA_PROCESSOR = [
     dict(NAME='mask_points_and_boxes_outside_range',
@@ -17,15 +17,15 @@ MODEL = dict(
         NAME='GeneralPointNet2MSG',
         ENCODER=
         [
-            dict(samplers=[dict(name='d-fps', range=[0, 16384], sample=4096)],
+            dict(samplers=[dict(name='hvcs_for_query', sample=4096, voxel=[0.4, 0.4, 0.35])],
                  groupers=[dict(name='ball', query=dict(radius=0.2, neighbour=16), mlps=[16, 16, 32]),
                            dict(name='ball', query=dict(radius=0.8, neighbour=32), mlps=[32, 32, 64])],
                  aggregation=dict(name='cat-mlps', mlps=[64])),
-            dict(samplers=[dict(name='d-fps', range=[0, 4096], sample=1024)],
+            dict(samplers=[dict(name='hvcs_for_query', sample=1024, voxel=[2.0, 2.0, 1.75])],
                  groupers=[dict(name='ball', query=dict(radius=0.8, neighbour=16), mlps=[64, 64, 128]),
                            dict(name='ball', query=dict(radius=1.6, neighbour=32), mlps=[64, 96, 128])],
                  aggregation=dict(name='cat-mlps', mlps=[128])),
-            dict(samplers=[dict(name='ctr', range=[0, 1024], sample=512, mlps=[128], class_names=DATASET.CLASS_NAMES,
+            dict(samplers=[dict(name='ctr', sample=512, mlps=[128], class_name=DATASET.CLASS_NAMES,
                                 train=dict(target={'extra_width': [0.5, 0.5, 0.5]},
                                            loss={'weight': 1.0, 'tb_tag': 'sasa_1'}))],
                  groupers=[dict(name='ball', query=dict(radius=1.6, neighbour=16), mlps=[128, 128, 256]),
@@ -35,7 +35,7 @@ MODEL = dict(
     POINT_HEAD=dict(
         NAME='PointHeadVotePlus',
         CLASS_AGNOSTIC=False,
-        VOTE_SAMPLER=dict(name='ctr', range=[0, 512], sample=256, mlps=[256], class_names=DATASET.CLASS_NAMES,
+        VOTE_SAMPLER=dict(name='ctr', sample=256, mlps=[256], class_name=DATASET.CLASS_NAMES,
                           train=dict(target={'extra_width': [0.5, 0.5, 0.5]},
                                      loss={'weight': 1.0, 'tb_tag': 'sasa_2'})),
         VOTE_MODULE=
@@ -52,14 +52,13 @@ MODEL = dict(
         CLS_FC=[256, 256],
         REG_FC=[256, 256],
         BOX_CODER=dict(name='PointBinResidualCoder', angle_bin_num=12,
-                       use_mean_size=True, mean_size=[[3.9, 1.6, 1.56],
-                                                      [0.8, 0.6, 1.73],
-                                                      [1.76, 0.6, 1.73]]),
+                       use_mean_size=True, mean_size=[[0.8, 0.6, 1.73]]),
+
         TARGET_CONFIG={'method': 'mask', 'gt_central_radius': False, 'extra_width': [0.2, 0.2, 0.2]},
         LOSS_CONFIG=dict(LOSS_CLS='WeightedBinaryCrossEntropyLoss',
                          LOSS_REG='WeightedSmoothL1Loss',
-                         AXIS_ALIGNED_IOU_LOSS_REGULARIZATION=True,
-                         CORNER_LOSS_REGULARIZATION=True,
+                         AXIS_ALIGNED_IOU_LOSS_REGULARIZATION=False,
+                         CORNER_LOSS_REGULARIZATION=False,
                          WEIGHTS={'point_cls_weight': 1.0,
                                   'point_offset_reg_weight': 1.0,
                                   'point_angle_cls_weight': 0.2,
@@ -80,3 +79,6 @@ MODEL = dict(
     )
 )
 RUN.tracker.metrics = DATASET.get('metrics', [])
+RUN.workflows.train = [dict(state='train', split='train', epochs=75)] + \
+                      [dict(state='train', split='train', epochs=1),
+                       dict(state='test', split='test', epochs=1)] * 5
