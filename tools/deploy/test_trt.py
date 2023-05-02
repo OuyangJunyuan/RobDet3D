@@ -88,7 +88,7 @@ def main():
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--engine', type=Path)
-    parser.add_argument('--cache', type=Path, default=Path("tools/experiments2/data/eval.pkl"))
+    parser.add_argument('--cache', type=Path, default=Path("tools/experiments/data/eval.pkl"))
     _, dataloader, args = quick_demo(parser)
 
     engine_file = args.engine

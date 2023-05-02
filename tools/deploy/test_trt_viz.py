@@ -22,6 +22,7 @@ batch_dict = dataloader.dataset.collate_batch([dataloader.dataset[fid] for fid i
 dataloader.dataset.load_data_to_gpu(batch_dict)
 points = batch_dict['points'].view(bs, -1, 5)[..., 1:].contiguous().cpu().numpy()
 print(points.shape)
+num_points = points.shape[1]
 
 
 def allocate_buffers(engine):
@@ -77,7 +78,7 @@ def trt_inf():
     with engine.create_execution_context() as context:
         stream = cuda.Stream()
         context.set_optimization_profile_async(0, stream.handle)
-        context.set_binding_shape(engine.get_binding_index("points"), (bs, 16384, 4))
+        context.set_binding_shape(engine.get_binding_index("points"), (bs, num_points, 4))
         assert context.all_binding_shapes_specified
 
         for binding in engine:
