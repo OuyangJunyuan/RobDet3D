@@ -127,8 +127,8 @@ def viz_scene(points, boxes, center=None, vis=None):
         vis.destroy_window()
 
 
-def viz_scenes(*scenes, offset=None, origin=False):
-    vis = add_scene(origin=origin)
+def viz_scenes(*scenes, offset=None, origin=False, title="rd3d"):
+    vis = add_scene(origin=origin, title=title)
 
     if offset is None:
         offset = [0, 0, 0]

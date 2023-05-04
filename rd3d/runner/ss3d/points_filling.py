@@ -1,12 +1,12 @@
 import pickle
 import numpy as np
 from pathlib import Path
-from ...datasets.augmentor.transforms import AUGMENTS, Augment
+from ...datasets.augmentor.transforms import AUGMENTOR, Augmentor
 from ...ops.iou3d_nms.iou3d_nms_utils import boxes_bev_iou_cpu
 
 
-@AUGMENTS.register_module('points_filling')
-class PointCloudFilling(Augment):
+@AUGMENTOR.register_module('points_filling')
+class PointCloudFilling(Augmentor):
     def __init__(self, **kwargs):
         super().__init__(kwargs)
         self.bank = kwargs['bank']
@@ -65,7 +65,7 @@ class PointCloudFilling(Augment):
         names = np.hstack([exist_names, np.array(names_list)])
         return points, boxes, names
 
-    def random(self, data_dict):
+    def params(self, data_dict):
         boxes = self.pred_infos.get(data_dict['frame_id'], np.zeros([0, 7]))
         random_sample_frame_id = np.random.choice(list(self.bank.bk_infos.keys()), boxes.shape[0])
         random_sample_obj_id = [np.random.choice(len(self.bank.bk_infos[fid])) for fid in random_sample_frame_id]

@@ -10,7 +10,7 @@ from .instance_bank import Bank
 from .points_filling import PointCloudFilling
 from ..runner import DistRunnerBase
 from ...api.dist import on_rank0, all_gather_object, barrier
-from ...datasets.augmentor.transforms import Augments
+from ...datasets.augmentor.transforms import AugmentorList
 from ...utils.base import Hook, replace_attr, when, merge_dicts
 
 
@@ -226,7 +226,7 @@ class SS3DHook(SS3DHookHelper):
         self.root_dir = dataset.root_path
         self.class_names = dataset.class_names
 
-        self.global_augments = Augments(run.ss3d.global_augments)
+        self.global_augments = AugmentorList(run.ss3d.global_augments)
         self.bank = Bank(run.ss3d.bank, root_dir=self.root_dir, class_names=self.class_names)
 
         run.from_ss3d = self

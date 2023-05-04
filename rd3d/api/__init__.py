@@ -33,7 +33,7 @@ def quick_demo(parser=None):
     @Hook.auto
     def add_args(parser=parser):
         parser = argparse.ArgumentParser() if parser is None else parser
-        parser.add_argument('--cfg_file', type=str, default="configs/iassd/iassd_4x8_80e_kitti_3cls.py",
+        parser.add_argument('--cfg', type=str, default="configs/iassd/iassd_4x8_80e_kitti_3cls.py",
                             help='specify the config for training')
         parser.add_argument('--ckpt', type=str, default=None,
                             help='checkpoint to start from')
@@ -48,23 +48,20 @@ def quick_demo(parser=None):
     @Hook.auto
     def parse_config(args):
         """read config from file and cmdline"""
-        cfg = Config.fromfile(args.cfg_file)
+        cfg = Config.fromfile(args.cfg)
         cfg = Config.merge_custom_cmdline_setting(cfg, args.set_cfgs) if args.set_cfgs is not None else cfg
-        cfg.RUN.samples_per_gpu = args.batch if args.batch is not None else cfg.RUN.samples_per_gpu
-        cfg.RUN.seed = args.seed if args.seed is not None else time.time_ns() % (2 ** 32 - 1)
         return cfg
 
+    logger = create_logger(stderr=False)
     args = add_args().parse_args()
     cfg = parse_config(args)
     set_random_seed(cfg.RUN.seed)
-    logger = create_logger(stderr=False)
-    logger.info(f"seed: {cfg.RUN.seed}")
+    cfg.RUN.samples_per_gpu = args.batch if args.batch is not None else cfg.RUN.samples_per_gpu
+    cfg.RUN.seed = args.seed if args.seed is not None else time.time_ns() % (2 ** 32 - 1)
+
     """ build dataloaders & model """
     dataloader = build_dataloader(cfg.DATASET, cfg.RUN, training=False, logger=logger)
     model = build_detector(cfg.MODEL, dataset=dataloader.dataset)
     if args.ckpt:
         checkpoint.load_from_file(args.ckpt, model)
-    if parser:
-        return model, dataloader, args
-    else:
-        return model, dataloader
+    return model, dataloader, cfg, args

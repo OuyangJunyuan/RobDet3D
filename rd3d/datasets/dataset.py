@@ -278,7 +278,10 @@ class DatasetTemplate(torch_data.Dataset):
 def build_dataloader(datasets_cfg, run_cfg=None, logger=None, training=True):
     dataset = datasets.from_cfg(datasets_cfg, logger=logger, training=training)
     if run_cfg is None:
-        logger.info("run config is None, only return dataset from build_dataloader")
+        if logger:
+            logger.info("run config is None, only return dataset from build_dataloader")
+        else:
+            print("run config is None, only return dataset from build_dataloader")
         return dataset
 
     init_func = partial(worker_init_fn, seed=run_cfg.seed)

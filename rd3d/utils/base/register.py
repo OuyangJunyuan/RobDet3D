@@ -1,4 +1,5 @@
 import warnings
+from easydict import EasyDict
 
 
 class Register(dict):
@@ -19,6 +20,7 @@ class Register(dict):
         return register_to
 
     def from_cfg(self, cfg, *args, **kwargs):
+        cfg = EasyDict(cfg)
         module = self[cfg.get('name', cfg.get('NAME', cfg.get('type')))]
         return module(cfg, *args, **kwargs) if isinstance(module, type) else module
 

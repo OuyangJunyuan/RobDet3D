@@ -256,9 +256,9 @@ class DataAugmentor(object):
         return data_dict
 
     def compose(self, data_dict=None, config=None):
-        from .transforms import Augments
+        from .transforms import AugmentorList
         if data_dict is None:
-            return Augments(config['transforms'])
+            return AugmentorList(config['transforms'])
 
     def forward(self, data_dict):
         """

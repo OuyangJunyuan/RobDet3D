@@ -5,7 +5,7 @@ from pathlib import Path
 from easydict import EasyDict
 
 from rd3d.utils.base import Hook
-from rd3d.api import acc, get_dist_state, set_random_seed, checkpoint, Config,create_logger
+from rd3d.api import acc, get_dist_state, set_random_seed, checkpoint, Config, create_logger
 from rd3d import build_detector, build_dataloader, build_optimizer, build_scheduler, DistRunner
 
 
@@ -85,19 +85,22 @@ if __name__ == '__main__':
     logger.info(f"CUDA_VISIBLE_DEVICES: {os.environ.get('CUDA_VISIBLE_DEVICES', 'ALL')}")
     logger.info(f"TOTAL_BATCH_SIZE: {cfg.RUN.num_gpus * cfg.RUN.samples_per_gpu}")
     logger.info(cfg.ARGS, title=["CMDLINE ARGS", "VALUE"])
-    logger.info(cfg.RUN, title=[f'cfg.RUN', 'VALUE'], width=50)
+    logger.info(cfg, title=[f'cfg.RUN', 'VALUE'], width=50)
 
     if cfg.RUN.tracker.get('init_kwargs', None):
         acc.init_trackers(cfg.RUN.tracker.project, config=cfg, init_kwargs=cfg.RUN.tracker.init_kwargs)
-    """ build dataloaders & model & optimizer & lr_scheduler """
+
+    """ build dataloaders """
     dataloaders = {'train': build_dataloader(cfg.DATASET, cfg.RUN, training=True, logger=logger)}
     if 'test' in [work.split for work in cfg.RUN.workflows[cfg.RUN.mode]]:
         dataloaders.update({'test': build_dataloader(cfg.DATASET, cfg.RUN, training=False, logger=logger)})
 
+    """ & model & optimizer & lr_scheduler """
     model = build_detector(cfg.MODEL, dataset=dataloaders["train"].dataset)
     optim = build_optimizer(cfg.OPTIMIZATION, model=model)
     lr_sche = build_scheduler(cfg.LR, optimizer=optim, total_steps=len(dataloaders["train"]) * cfg.RUN.max_epochs)
 
+    """ run experiment """
     runner = DistRunner(cfg.RUN, model=model, optimizer=optim, scheduler=lr_sche, logger=logger)
     runner.run(ckpts=cfg.RUN.ckpt_list, dataloaders=dataloaders)
 

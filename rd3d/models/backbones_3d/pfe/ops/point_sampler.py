@@ -116,9 +116,11 @@ class RandomVoxelSampling(PS):
     @torch.no_grad()
     def forward(self, xyz: torch.Tensor, **kwargs) -> torch.Tensor:
         if self.adaptive:
-            from easydict import EasyDict
-            self.gen = sampler.from_cfg(EasyDict(name='hvcs_v2_info', sample=self.num_sample, voxel=[0.4, 0.4, 0.35]))
-            voxels = self.gen(xyz)[1].tolist()
+            self.gen: HierarchicalAdaptiveVoxelSampling = sampler.from_cfg(
+                dict(name='havs', sample=self.num_sample, voxel=self.voxel, return_detail=True)
+            )
+            self.gen(xyz)
+            voxels = self.gen.return_dict["voxel_sizes"][:, 3:6].tolist()
             sampled_xyz = torch.cat([self.one_sample(self.build_voxel_gen(voxels[i], xyz.device), xyz[i])
                                      for i in range(xyz.shape[0])], dim=0)
         else:
@@ -259,7 +261,7 @@ class CenterAwareSampling(PS):
         from .....utils.loss_utils import WeightedClassificationLoss
 
         super(CenterAwareSampling, self).__init__(sampling_cfg)
-        self.output_channels = 1  # len(self.cfg.get('class_names'))
+        self.output_channels = len(self.cfg.get('class_names'))
         self.mlps = self.build_mlps(self.cfg.mlps,
                                     in_channels=input_channels,
                                     out_channels=self.output_channels)
