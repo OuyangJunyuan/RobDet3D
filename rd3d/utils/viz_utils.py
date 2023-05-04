@@ -14,13 +14,14 @@ def add_points(vis, x, c=None):
             c = c - c.min()
             # c /= c.max()
             c = cmap(c)[:, :3].reshape(-1, 3)  # rgba -> rgb
-            pts.colors = open3d.utility.Vector3dVector(c)
+            colors = c
         else:
-            pts.colors = open3d.utility.Vector3dVector(np.ones((x.shape[0], 3)))
+            colors = open3d.utility.Vector3dVector()
     elif isinstance(c, list):
-        pts.colors = open3d.utility.Vector3dVector(np.ones_like(x) * np.array(c).reshape(1, 3))
+        colors = np.ones_like(x) * np.array(c).reshape(1, 3)
     else:
-        pts.colors = open3d.utility.Vector3dVector(c)
+        colors = c
+    pts.colors = open3d.utility.Vector3dVector(np.clip(colors, 0.0001, 1 - 0.001))
     vis.add_geometry(pts)
 
 
