@@ -8,7 +8,7 @@ from ..utils.base import Hook
 from ..api.dist import on_rank0, get_dist_state
 
 
-@Hook.auto
+@Hook.auto_call
 @torch.no_grad()
 def test_one_epoch(run, *args, **kwargs):
     run.model.eval()

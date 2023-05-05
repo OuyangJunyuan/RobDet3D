@@ -10,7 +10,7 @@ def demo():
     from rd3d.api import checkpoint, Config, create_logger, set_random_seed
     from rd3d import build_detector, build_dataloader
 
-    @Hook.auto
+    @Hook.auto_call
     def add_args():
         parser = argparse.ArgumentParser()
         parser.add_argument('--cfg_file', type=Path, required=True, help='specify the config for training')
@@ -20,7 +20,7 @@ def demo():
         parser.add_argument('--seed', type=int, default=None, help='random seed')
         return parser
 
-    @Hook.auto
+    @Hook.auto_call
     def parse_config(args):
         """read config from file and cmdline"""
         cfg = Config.fromfile(args.cfg_file)

@@ -8,7 +8,7 @@ from rd3d import build_detector, build_dataloader
 import torch
 
 
-@Hook.auto
+@Hook.auto_call
 def add_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--cfg_file', type=str, required=True, help='specify the config for training')
@@ -18,7 +18,7 @@ def add_args():
     return parser
 
 
-@Hook.auto
+@Hook.auto_call
 def parse_config(args):
     """read config from file and cmdline"""
     cfg = Config.fromfile(args.cfg_file)

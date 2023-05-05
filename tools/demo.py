@@ -1,4 +1,3 @@
-import _init_path
 import time
 import argparse
 import numpy as np
@@ -11,7 +10,7 @@ from rd3d.utils.viz_utils import viz_scenes
 import torch
 
 
-@Hook.auto
+@Hook.auto_call
 def add_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--cfg_file', type=str, required=True, help='specify the config for training')
@@ -22,7 +21,7 @@ def add_args():
     return parser
 
 
-@Hook.auto
+@Hook.auto_call
 def parse_config(args):
     """read config from file and cmdline"""
     cfg = Config.fromfile(args.cfg_file)
@@ -36,7 +35,7 @@ if __name__ == '__main__':
     args = add_args().parse_args()
     cfg = parse_config(args)
     set_random_seed(cfg.RUN.seed)
-    logger = create_logger(stderr=False)
+    logger = create_logger(stderr=True)
     logger.info(f"seed: {cfg.RUN.seed}")
     """ build dataloaders & model & optimizer & lr_scheduler """
     dataset = build_dataloader(cfg.DATASET, training=False, logger=logger)

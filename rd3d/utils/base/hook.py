@@ -26,15 +26,16 @@ class Hook:
             Hook.hooks.append(ins)
         return module
 
-    """ decorator """
+    @staticmethod
+    def infos():
+        return {hk.__class__.__name__: hk.__priority__ for hk in Hook.hooks}
 
     @staticmethod
     def priority(p: int = None):
         return partial(Hook.insert, priority=100 if p is None else p)
 
     @staticmethod
-    def auto(func):
-
+    def auto_call(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
             Hook.call_by_name(f'{func.__name__}_begin', *args, **kwargs)
@@ -62,11 +63,11 @@ def test():
         def main_end(self):
             print('Hook2 invokes main_end')
 
-    @Hook.auto
+    @Hook.auto_call
     def main():
         print('call main')
 
-    print(Hook.hooks)
+    print(str(Hook()))
     main()
 
 

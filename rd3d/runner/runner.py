@@ -62,13 +62,13 @@ class DistRunner(DistRunnerBase):
     def __init__(self, run_cfg, model, optimizer=None, scheduler=None, logger=None):
         super().__init__(run_cfg, model, optimizer, scheduler, logger)
 
-    @Hook.auto
+    @Hook.auto_call
     def forward(self, model, batch_dict):
         pred_ret_dict, ext_info_dict = model(batch_dict)
         if self.mode == self.state: self.cur_iters += 1
         return pred_ret_dict, ext_info_dict
 
-    @Hook.auto
+    @Hook.auto_call
     def batch_loop(self, model, dataloader):
         self.logger.info(f"********* Start EPOCH {self.cur_epochs} ({self.state}) *********")
         for self.inner_iters, batch_dict in enumerate(dataloader):
@@ -76,7 +76,7 @@ class DistRunner(DistRunnerBase):
             self.forward(model=model, batch_dict=batch_dict)
         if self.mode == self.state: self.cur_epochs += 1
 
-    @Hook.auto
+    @Hook.auto_call
     def epoch_loop(self, dataloaders):
         cur_loops = 0
         while self.cur_epochs < self.max_epochs:
@@ -90,7 +90,7 @@ class DistRunner(DistRunnerBase):
                     else:
                         self.logger.info(f'skip work({work})')
 
-    @Hook.auto
+    @Hook.auto_call
     def run(self, ckpts, dataloaders):
         self.logger.info(f"*********{self.mode} {self.tags.dataset}/{self.tags.model}/{self.tags.experiment}*********")
         dataloaders = {k: acc.prepare(v) for k, v in dataloaders.items()}

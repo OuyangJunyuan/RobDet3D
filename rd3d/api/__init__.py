@@ -30,7 +30,7 @@ def quick_demo(parser=None):
     from . import checkpoint
     from rd3d import build_detector, build_dataloader
 
-    @Hook.auto
+    @Hook.auto_call
     def add_args(parser=parser):
         parser = argparse.ArgumentParser() if parser is None else parser
         parser.add_argument('--cfg', type=str, default="configs/iassd/iassd_4x8_80e_kitti_3cls.py",
@@ -45,7 +45,7 @@ def quick_demo(parser=None):
                             help='batch_size')
         return parser
 
-    @Hook.auto
+    @Hook.auto_call
     def parse_config(args):
         """read config from file and cmdline"""
         cfg = Config.fromfile(args.cfg)

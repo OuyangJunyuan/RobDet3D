@@ -156,10 +156,7 @@ class KittiDataset(DatasetTemplate):
         return pts_valid_flag
 
     def get_infos(self, num_workers=4, has_label=True, count_inside_pts=True, sample_id_list=None):
-        import concurrent.futures as futures
-
         def process_single_scene(sample_idx):
-            print('%s sample_idx: %s' % (self.split, sample_idx))
             info = {}
             pc_info = {'num_features': 4, 'lidar_idx': sample_idx}
             info['point_cloud'] = pc_info
@@ -224,13 +221,14 @@ class KittiDataset(DatasetTemplate):
 
             return info
 
+        from tqdm import tqdm
         sample_id_list = sample_id_list if sample_id_list is not None else self.sample_id_list
-        with futures.ThreadPoolExecutor(num_workers) as executor:
-            infos = executor.map(process_single_scene, sample_id_list)
-        return list(infos)
+        return [process_single_scene(sample_idx)
+                for sample_idx in tqdm(iterable=sample_id_list, desc='%s' % self.split)]
 
     def create_groundtruth_database(self, info_path=None, used_classes=None, split='train'):
         import torch
+        from tqdm import tqdm
 
         database_save_path = Path(self.root_path) / ('gt_database' if split == 'train' else ('gt_database_%s' % split))
         db_info_save_path = Path(self.root_path) / ('kitti_dbinfos_%s.pkl' % split)
@@ -241,8 +239,7 @@ class KittiDataset(DatasetTemplate):
         with open(info_path, 'rb') as f:
             infos = pickle.load(f)
 
-        for k in range(len(infos)):
-            print('gt_database sample: %d/%d' % (k + 1, len(infos)))
+        for k in tqdm(iterable=range(len(infos)), desc='gt database'):
             info = infos[k]
             sample_idx = info['point_cloud']['lidar_idx']
             points = self.get_lidar(sample_idx)

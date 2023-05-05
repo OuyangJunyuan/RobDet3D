@@ -1,4 +1,3 @@
-import _init_path
 import os
 import argparse
 from pathlib import Path
@@ -9,7 +8,7 @@ from rd3d import build_detector, build_dataloader, DistRunner
 from rd3d.api import acc, get_dist_state, set_random_seed, checkpoint, Config,create_logger
 
 
-@Hook.auto
+@Hook.auto_call
 def add_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--output', type=str, default='output', help='experiment output root')
@@ -27,7 +26,7 @@ def add_args():
     return parser
 
 
-@Hook.auto
+@Hook.auto_call
 def parse_config(args):
     """read config from file and cmdline"""
     cfg = Config.fromfile(args.cfg)
@@ -86,7 +85,11 @@ if __name__ == '__main__':
     logger.info(f"CUDA_VISIBLE_DEVICES: {os.environ.get('CUDA_VISIBLE_DEVICES', 'ALL')}")
     logger.info(f"TOTAL_BATCH_SIZE: {cfg.RUN.num_gpus * cfg.RUN.samples_per_gpu}")
     logger.info(cfg.ARGS, title=["CMDLINE ARGS", "VALUE"])
-    logger.info(cfg.RUN, title=[f'cfg.RUN', 'VALUE'], width=50)
+    logger.info(cfg.DATASET, title=[f'cfg.DATASET', 'VALUE'], width=50)
+    logger.info(cfg.MODEL, title=[f'cfg.MODEL', 'VALUE'], width=50)
+    logger.info(cfg.LR, title=[f'cfg.LR', 'VALUE'], width=50)
+    logger.info(cfg.OPTIMIZATION, title=[f'cfg.OPTIMIZATION', 'VALUE'], width=50)
+    logger.info(cfg.RUN, title=[f'cfg.MODEL', 'VALUE'], exclude=['workflows'], width=50)
 
     if cfg.RUN.tracker.get('init_kwargs', None):
         acc.init_trackers(cfg.RUN.tracker.project, config=cfg, init_kwargs=cfg.RUN.tracker.init_kwargs)
@@ -95,6 +98,7 @@ if __name__ == '__main__':
     dataloader = build_dataloader(cfg.DATASET, cfg.RUN, training=False, logger=logger)
     model = build_detector(cfg.MODEL, dataset=dataloader.dataset)
     runner = DistRunner(cfg.RUN, model=model, logger=logger)
+    logger.info(Hook.infos(), title=[f'hook', 'priority'])
     runner.run(ckpts=cfg.RUN.ckpt_list, dataloaders={cfg.RUN.mode: dataloader})
 
     logger.info("Done")

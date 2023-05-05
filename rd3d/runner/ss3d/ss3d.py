@@ -14,7 +14,7 @@ from ...datasets.augmentor.transforms import AugmentorList
 from ...utils.base import Hook, replace_attr, when, merge_dicts
 
 
-@Hook.auto
+@Hook.auto_call
 @torch.no_grad()
 def mine_miss_anno_ins_one_epoch(run: DistRunnerBase, *args, **kwargs):
     if run.ss3d.missing_anno_ins_mining.cache: return
@@ -220,7 +220,6 @@ class SS3DHookHelper:
 
 @Hook.priority(3)
 class SS3DHook(SS3DHookHelper):
-
     def run_begin(self, run, dataloaders, *args, **kwargs):
         dataset = dataloaders['train'].dataset
         self.root_dir = dataset.root_path

@@ -21,9 +21,9 @@ def info_for_iterable_obj(func):
 
     def wrapper(msg, *args, **kwargs):
         if iterable(msg):
-            f = kwargs.pop('filter', None)
+            f = kwargs.pop('exclude', None)
             width = kwargs.pop('width', 0)
-            msg = msg if f is None else {k: v for k, v in msg.items() if k in f}
+            msg = msg if f is None else {k: v for k, v in msg.items() if k not in f}
             for msg in make_table(msg, title=kwargs.pop('title', None), width=width).split(sep='\n'):
                 func(msg, *args, **kwargs)
         else:

@@ -3,7 +3,7 @@ from ..utils.base import Hook
 from torch.nn.utils import clip_grad_norm_
 
 
-@Hook.auto
+@Hook.auto_call
 def train_one_epoch(run, *args, **kwargs):
     run.model.train()
     run.batch_loop(*args, **kwargs)
