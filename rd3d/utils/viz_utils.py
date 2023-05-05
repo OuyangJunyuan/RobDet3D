@@ -21,7 +21,7 @@ def add_points(vis, x, c=None):
         colors = np.ones_like(x) * np.array(c).reshape(1, 3)
     else:
         colors = c
-    pts.colors = open3d.utility.Vector3dVector(np.clip(colors, 0.0001, 1 - 0.001))
+    pts.colors = open3d.utility.Vector3dVector(np.clip(colors, 0.1, 1 - 0.1))
     vis.add_geometry(pts)
 
 
@@ -53,15 +53,14 @@ def add_boxes(vis, boxes, labels=None, scores=None, color=(1, 0, 0)):
         axis_angles = np.array([0, 0, gt_boxes[6] + 1e-10])
         rot = open3d.geometry.get_rotation_matrix_from_axis_angle(axis_angles)
         box3d = open3d.geometry.OrientedBoundingBox(center, rot, lwh)
+        box3d.color = (0.5, 0.5, 0.5)  # remove Open3D warning
+        line_set = open3d.geometry.LineSet()
+        line_set = line_set.create_from_oriented_bounding_box(box3d)
 
-        line_set = open3d.geometry.LineSet.create_from_oriented_bounding_box(box3d)
-
-        # import ipdb; ipdb.set_trace(context=20)
         lines = np.asarray(line_set.lines)
         lines = np.concatenate([lines, np.array([[1, 4], [7, 6]])], axis=0)
 
         line_set.lines = open3d.utility.Vector2iVector(lines)
-
         return line_set
 
     box_colormap = [
@@ -76,11 +75,11 @@ def add_boxes(vis, boxes, labels=None, scores=None, color=(1, 0, 0)):
 
     for i in range(boxes.shape[0]):
         box_lines = translate_boxes_to_open3d_instance(boxes[i])
-        if labels is None:
-            box_lines.paint_uniform_color(color)
-        else:
-            box_lines.paint_uniform_color(box_colormap[labels[i]])
-
+        if labels is not None:
+            color = box_colormap[labels[i]]
+        color = np.array(np.clip(color, 0.01, 1 - 0.01))
+        num_lines = np.asarray(box_lines.lines).shape[0]
+        box_lines.colors = open3d.utility.Vector3dVector(np.repeat(color[None, ...], repeats=num_lines, axis=0))
         vis.add_geometry(box_lines)
     return vis
 
@@ -109,7 +108,7 @@ def viz_points(points):
 
 def viz_scene(points, boxes, center=None, vis=None):
     def check_numpy(*objs):
-        return [obj.copy() if isinstance(obj, np.ndarray) else obj.cpu().numpy() for obj in objs]
+        return [obj if isinstance(obj, np.ndarray) else obj.cpu().numpy().copy() for obj in objs]
 
     points, boxes = check_numpy(points, boxes)
     if points.shape[-1] == 5: points = points[:, 1:]

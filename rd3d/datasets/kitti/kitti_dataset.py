@@ -33,7 +33,8 @@ class KittiDataset(DatasetTemplate):
         self.root_split_path = self.root_path / ('training' if self.split != 'test' else 'testing')
 
         split_dir = self.root_path / 'ImageSets' / (self.split + '.txt')
-        self.sample_id_list = [x.strip() for x in open(split_dir).readlines()] if split_dir.exists() else None
+        with open(split_dir) as f:
+            self.sample_id_list = [x.strip() for x in f.readlines()] if split_dir.exists() else None
 
         self.kitti_infos = []
         self.include_kitti_data(self.mode)

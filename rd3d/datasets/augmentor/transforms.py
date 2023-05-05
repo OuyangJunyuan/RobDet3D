@@ -7,44 +7,56 @@ from ...utils.base import Register, merge_dicts
 AUGMENTOR = Register('AUGMENTS')
 
 
-def enable(prob, size=None):
-    i_size = int(size) if size is not None else None
-    mask = np.random.choice([False, True], p=[1 - prob, prob], size=i_size)
-    if isinstance(size, torch.Tensor):
-        mask = size.new_tensor(mask, dtype=torch.bool)
-    return mask
+class AugUtils:
+
+    def params(self, data_dict):
+        return {}
+
+    @staticmethod
+    def uniform(a, b, size=None, **kwargs):
+        return (b - a) * torch.rand(size or [], **kwargs) + a
+
+    @staticmethod
+    def normal(mean, std, **kwargs):
+        return torch.normal(torch.tensor(mean), torch.tensor(std), **kwargs)
+
+    @staticmethod
+    def enable(prob, size=None, **kwargs):
+        prob = torch.clip(torch.tensor(prob), 0, 1)
+        mask = torch.rand(size or [], **kwargs) < prob
+        return mask
+
+    @staticmethod
+    def angle_out_of_range(x, mid, width):
+        diff = (x - mid + np.pi) % (2 * np.pi) - np.pi
+        return torch.logical_or(diff < -width / 2, width / 2 < diff)
+
+    @staticmethod
+    def try_points_in_boxes_masks_from_cache(data_dict):
+        def points_in_boxes():
+            if 'points' in data_dict and 'gt_boxes' in data_dict:
+                points: torch.Tensor = data_dict['points'][:, 0:3]
+                boxes: torch.Tensor = data_dict['gt_boxes']
+                if points.device == torch.device("cpu"):
+                    from ...ops.roiaware_pool3d.roiaware_pool3d_utils import points_in_boxes_cpu
+                    flags = points_in_boxes_cpu(points, boxes)
+                    box_id, point_id = torch.split(flags.nonzero(), 1, dim=-1)
+                    mask = torch.ones([points.size(0)], dtype=torch.int32) * -1
+                    mask[point_id] = box_id.int()
+                else:
+                    from ...ops.roiaware_pool3d.roiaware_pool3d_utils import points_in_boxes_gpu
+                    mask = points_in_boxes_gpu(points.unsqueeze(0), boxes.unsqueeze(0)).squeeze(0)
+                return [(mask == i).nonzero().squeeze(1) for i in range(boxes.size(0))]
+            else:
+                return []
+
+        logs = data_dict['augment_logs']
+        if 'points_in_boxes' not in logs:
+            logs['points_in_boxes'] = points_in_boxes()
+        return logs['points_in_boxes']
 
 
-def angle_out_of_range(x, mid, width, handle=np):
-    diff = (x - mid + np.pi) % (2 * np.pi) - np.pi
-    width /= 2
-    return handle.logical_or(diff < -width, width < diff)
-
-
-def try_points_in_boxes_masks_from_cache(data_dict):
-    if 'points_in_boxes' in data_dict['augment_logs']:
-        mask = data_dict['augment_logs']['points_in_boxes']
-    else:
-        points = data_dict['points']
-        gt_boxes = data_dict['gt_boxes']
-        if isinstance(points, torch.Tensor):
-            from ...ops.roiaware_pool3d.roiaware_pool3d_utils import points_in_boxes_gpu
-            flag = points_in_boxes_gpu(points[None, ..., 0:3], gt_boxes[None, ...])[0].long()
-            mask = flag.new_zeros([gt_boxes.shape[0] + 1, points.shape[0]], dtype=torch.bool)
-            index = torch.nonzero(flag + 2)[..., 0]
-            mask[flag, index] = True
-            mask = mask[:gt_boxes.shape[0]].contiguous()
-        else:
-            from ...ops.roiaware_pool3d.roiaware_pool3d_utils import points_in_boxes_cpu
-            mask = points_in_boxes_cpu(
-                torch.from_numpy(points[:, 0:3]), torch.from_numpy(gt_boxes)
-            ).numpy()
-            mask = mask == 1
-        data_dict['augment_logs']['points_in_boxes'] = mask
-    return mask
-
-
-class Augmentor:
+class Augmentor(AugUtils):
     def __init__(self, kwargs):
         self.name = type(self).__name__
         self.prob = kwargs.get('prob', 1.0)
@@ -53,7 +65,6 @@ class Augmentor:
         from easydict import EasyDict
         if isinstance(params, list):
             params = merge_dicts(params)
-        # params = {k: np.array(v) for k, v in params.items()}
         return EasyDict(params)
 
     def invert(self, data_dict, params=None):
@@ -65,7 +76,7 @@ class Augmentor:
     def __call__(self, data_dict, params=None):
         if 'augment_logs' not in data_dict:
             data_dict['augment_logs'] = {}
-        if enable(self.prob):
+        if self.enable(self.prob):
             params = self.build_params(params or self.params(data_dict))
             self.forward(data_dict, **params)
             data_dict['augment_logs'][self.name] = params
@@ -77,63 +88,35 @@ class GlobalRotate(Augmentor):
     def __init__(self, kwargs):
         super().__init__(kwargs)
         self.range = kwargs.get('range', [-np.pi / 4, np.pi / 4])
+        assert len(self.range) == 2
 
-        if not isinstance(self.range, list):
-            self.range = [abs(self.range)]
-        if len(self.range) == 1:
-            self.range = [-self.range[0], self.range[0]]
+    @staticmethod
+    def euler2matrix(euler, **kwargs):
+        rot_mat = Rotation.from_euler('z', euler.numpy()).as_matrix()
+        rot_mat = torch.tensor(rot_mat, **kwargs)
+        return rot_mat
 
     @staticmethod
     def rotate_points(points, rot):
-        def rotate_points_numpy(points, rot):
-            coords, feats = points[..., :3], points[..., 3:]
-            rot = Rotation.from_euler('z', rot).as_matrix()
-            coords = coords @ rot.T
-            points = np.concatenate((coords, feats), axis=-1)
-            return points
-
-        def rotate_points_torch(points, rot):
-            coords, feats = points[..., :3], points[..., 3:]
-            rot = Rotation.from_euler('z', rot).as_matrix()
-            rot = points.new_tensor(rot)
-            coords = coords @ rot.transpose(-2, -1)
-            points = torch.concat((coords, feats), dim=-1)
-            return points
-
-        if isinstance(points, torch.Tensor):
-            return rotate_points_torch(points, rot)
-        else:
-            return rotate_points_numpy(points, rot)
+        coords, feats = points[:, :3], points[:, 3:]
+        rot = GlobalRotate.euler2matrix(rot, dtype=points.dtype, device=points.device)
+        coords = coords @ rot.transpose(0, 1)
+        points = torch.cat((coords, feats), dim=-1)
+        return points
 
     @staticmethod
-    def rotate_boxes(boxes, rot, globally=True):
-        def rotate_boxes_numpy(boxes, rot):
-            if globally:
-                boxes[..., :3] = GlobalRotate.rotate_points(boxes[..., :3], rot)
-            boxes[..., 6] = boxes[..., 6] + rot
-            if boxes.shape[-1] > 7:
-                velo_xy = np.concatenate([boxes[..., 7:9], np.zeros_like(boxes[..., :1])], axis=-1)
-                boxes[..., 7:9] = GlobalRotate.rotate_points(velo_xy, rot)[..., :2]
-            return boxes
-
-        def rotate_boxes_torch(boxes, rot):
-            if globally:
-                boxes[..., :3] = GlobalRotate.rotate_points(boxes[..., :3], rot)
-            rot = boxes.new_tensor(rot)
-            boxes[..., 6] = boxes[..., 6] + rot
-            if boxes.shape[-1] > 7:
-                velo_xy = torch.concat([boxes[..., 7:9], torch.zeros_like(boxes[..., :1])], dim=-1)
-                boxes[..., 7:9] = GlobalRotate.rotate_points(velo_xy, rot)[..., :2]
-            return boxes
-
-        if isinstance(boxes, torch.Tensor):
-            return rotate_boxes_torch(boxes, rot)
-        else:
-            return rotate_boxes_numpy(boxes, rot)
+    def rotate_boxes(boxes, rot, locally=False):
+        from ...utils.common_utils import limit_period
+        if not locally:
+            boxes[:, :3] = GlobalRotate.rotate_points(boxes[:, :3], rot)
+        boxes[:, 6] = limit_period(boxes[:, 6] + rot.to(boxes.device), offset=0.5, period=2 * np.pi)
+        if boxes.size(-1) > 7:
+            velo_xy = torch.cat([boxes[:, 7:9], torch.zeros_like(boxes[:, :1])], dim=-1)
+            boxes[:, 7:9] = GlobalRotate.rotate_points(velo_xy, rot)[:, :2]
+        return boxes
 
     def params(self, data_dict):
-        rot_noise = np.array(np.random.uniform(self.range[0], self.range[1]))
-        return dict(rot=rot_noise)
+        return dict(rot=self.uniform(self.range[0], self.range[1]))
 
     def backward(self, data_dict, rot):
         self.forward(data_dict, -rot)
@@ -150,37 +133,29 @@ class GlobalTranslate(Augmentor):
     def __init__(self, kwargs):
         super().__init__(kwargs)
         self.std = kwargs.get('std', [0, 0, 0])
-        if not isinstance(self.std, list):
-            self.std = [abs(self.std)]
-        if len(self.std) == 1:
-            self.std *= 3
+        assert len(self.std) == 3
 
     @staticmethod
     def translate_boxes(boxes, trans):
-        if isinstance(boxes, torch.Tensor):
-            trans = boxes.new_tensor(trans)
-        boxes[:, :3] += trans
+        boxes[:, :3] += trans.to(boxes.device)
         return boxes
 
     @staticmethod
     def translate_points(points, trans):
-        if isinstance(points, torch.Tensor):
-            trans = points.new_tensor(trans)
-        points[:, :3] += trans
+        points[:, :3] += trans.to(points.device)
         return points
 
     def params(self, data_dict):
-        trans_noise = np.random.normal(scale=self.std, size=3)
-        return dict(trans=trans_noise)
+        return dict(trans_noise=self.normal(0.0, self.std))
 
-    def backward(self, data_dict, trans):
-        self.forward(data_dict, -trans)
+    def backward(self, data_dict, trans_noise):
+        self.forward(data_dict, -trans_noise)
 
-    def forward(self, data_dict, trans):
+    def forward(self, data_dict, trans_noise):
         if 'points' in data_dict:
-            data_dict['points'] = self.translate_points(data_dict['points'], trans)
+            data_dict['points'] = self.translate_points(data_dict['points'], trans_noise)
         if 'gt_boxes' in data_dict:
-            data_dict['gt_boxes'] = self.translate_boxes(data_dict['gt_boxes'], trans)
+            data_dict['gt_boxes'] = self.translate_boxes(data_dict['gt_boxes'], trans_noise)
 
 
 @AUGMENTOR.register_module('global_scale')
@@ -188,38 +163,31 @@ class GlobalScale(Augmentor):
     def __init__(self, kwargs):
         super().__init__(kwargs)
         self.range = kwargs.get('range', [0.95, 1.05])
-        if not isinstance(self.range, list):
-            self.range = [abs(self.range)]
-        if len(self.range) == 1:
-            self.range = [1 - self.range[0], 1 + self.range[0]]
 
     @staticmethod
     def scale_boxes(boxes, scale):
-        if isinstance(boxes, torch.Tensor):
-            scale = boxes.new_tensor(scale)
-        boxes[..., :6] *= scale[..., None, None]
-        boxes[..., 7:] *= scale[..., None, None]
+        scale = scale.to(boxes.device)
+        boxes[:, :6] *= scale
+        boxes[:, 7:] *= scale
         return boxes
 
     @staticmethod
     def scale_points(points, scale):
-        if isinstance(points, torch.Tensor):
-            scale = points.new_tensor(scale)
-        points[..., :3] *= scale[..., None, None]
+        scale = scale.to(points.device)
+        points[:, :3] *= scale
         return points
 
     def params(self, data_dict):
-        scale_noise = np.array(np.random.uniform(self.range[0], self.range[1]))
-        return dict(scale=scale_noise)
+        return dict(scale_noise=self.uniform(self.range[0], self.range[1]))
 
-    def backward(self, data_dict, scale):
-        self.forward(data_dict, 1.0 / scale)
+    def backward(self, data_dict, scale_noise):
+        self.forward(data_dict, 1.0 / scale_noise)
 
-    def forward(self, data_dict, scale):
+    def forward(self, data_dict, scale_noise):
         if 'points' in data_dict:
-            data_dict['points'] = self.scale_points(data_dict['points'], scale)
+            data_dict['points'] = self.scale_points(data_dict['points'], scale_noise)
         if 'gt_boxes' in data_dict:
-            data_dict['gt_boxes'] = self.scale_boxes(data_dict['gt_boxes'], scale)
+            data_dict['gt_boxes'] = self.scale_boxes(data_dict['gt_boxes'], scale_noise)
 
 
 @AUGMENTOR.register_module('global_flip')
@@ -227,35 +195,31 @@ class GlobalFlip(Augmentor):
     def __init__(self, kwargs):
         super().__init__(kwargs)
         self.axis = kwargs.get('axis', ['x'])
-        if not isinstance(self.axis, list):
-            self.axis = [self.axis]
 
     @staticmethod
     def flip_points(points, axis_x, axis_y):
         if axis_x:
-            points[..., 1] = -points[..., 1]
+            points[:, 1] *= -1
         if axis_y:
-            points[..., 0] = -points[..., 0]
+            points[:, 0] *= -1
         return points
 
     @staticmethod
-    def flip_boxes(boxes, axis_x, axis_y, globally=True):
+    def flip_boxes(boxes, axis_x, axis_y, locally=False):
         if axis_x:
-            if globally:
-                boxes[..., 1] = -boxes[..., 1]
-            boxes[..., 6] = -boxes[..., 6]
-            if boxes.shape[-1] > 7:
-                boxes[..., 8] = boxes[..., 8]
+            boxes[:, 1] *= -1 if not locally else 1
+            boxes[:, 6] *= -1
+            if boxes.size(-1) > 7:
+                boxes[:, 8] *= -1
         if axis_y:
-            if globally:
-                boxes[..., 0] = -boxes[..., 0]
-            boxes[..., 6] = -boxes[..., 6] + np.pi
-            if boxes.shape[-1] > 7:
-                boxes[..., 7] = boxes[..., 7]
+            boxes[:, 0] *= -1 if not locally else 1
+            boxes[:, 6] = -boxes[:, 6] + np.pi
+            if boxes.size(-1) > 7:
+                boxes[:, 7] *= -1
         return boxes
 
     def params(self, data_dict):
-        return {k: enable(0.5) if k in self.axis else False for k in ['x', 'y']}
+        return {k: self.enable(0.5) if k in self.axis else False for k in ['x', 'y']}
 
     def backward(self, data_dict, x, y):
         self.forward(data_dict, x, y)
@@ -275,26 +239,16 @@ class GlobalSparsify(Augmentor):
 
     def params(self, data_dict):
         points = data_dict['points']
-        if len(points.shape) == 2:
-            num_points = points.shape[0]
-        else:
-            raise ValueError
-        mask = enable(self.ratio, size=num_points)
-        mask_inv = np.logical_not(mask)
+        mask = self.enable(self.ratio, size=points.size(0))
+        mask_inv = torch.logical_not(mask)
         drop_part = points[mask_inv]
         return dict(mask=mask, mask_inv=mask_inv, drop_part=drop_part)
 
     def backward(self, data_dict, mask, mask_inv, drop_part):
         points = data_dict['points']
-        num_points = mask.shape[0]
-        if isinstance(points, torch.Tensor):
-            raw_points = points.new_zeros([num_points, points.shape[-1]])
-            raw_points[mask] = points
-            raw_points[mask_inv] = points.new_tensor(drop_part)
-        else:
-            raw_points = np.zeros([num_points, points.shape[-1]])
-            raw_points[mask] = data_dict['points']
-            raw_points[mask_inv] = drop_part
+        raw_points = points.new_zeros([mask.size(0), points.size(-1)])
+        raw_points[mask] = points
+        raw_points[mask_inv] = drop_part.to(points.device)
         data_dict['points'] = raw_points
 
     def forward(self, data_dict, mask, mask_inv, drop_part):
@@ -308,40 +262,34 @@ class FrustumSparsify(Augmentor):
         self.head = kwargs.get('direction', [-np.pi / 4, np.pi / 4])
         self.range = kwargs.get('range', np.pi / 4)
         self.ratio = np.clip(abs(kwargs.get('keep_ratio', 0.5)), 0, 1)
-        assert len(self.head) == 2
 
     def params(self, data_dict):
-        points = data_dict['points']
-        handle = torch if isinstance(points, torch.Tensor) else np
+        if 'points' in data_dict:
+            head = self.uniform(self.head[0], self.head[1])
+            width = self.uniform(0.0, np.pi / 4)
 
-        head = np.random.uniform(self.head[0], self.head[1])
-        width = abs(np.random.normal(scale=np.pi / 4))
-        points_head = handle.arctan2(points[..., 1], points[..., 0])
-        out_range = angle_out_of_range(points_head, head, width, handle)
+            points = data_dict['points']
+            point_direction = torch.arctan2(points[:, 1], points[:, 0])
+            keep = self.angle_out_of_range(point_direction, head, width)
+            remove = torch.logical_not(keep)
+            keep[remove] = self.enable(self.ratio, size=remove.sum(), device=points.device)
 
-        in_range = handle.logical_not(out_range)
-        out_range[in_range] = enable(self.ratio, size=in_range.sum())
-        mask = out_range
-        mask_inv = handle.logical_not(mask)
-        drop_part = data_dict['points'][mask_inv]
-        return dict(mask=mask, mask_inv=mask_inv, drop_part=drop_part)
+            mask_inv = torch.logical_not(keep)
+            drop_part = data_dict['points'][mask_inv]
+            return dict(mask=keep, mask_inv=mask_inv, drop_part=drop_part)
+        else:
+            return dict(mask=None, mask_inv=None, drop_part=None)
 
     def backward(self, data_dict, mask, mask_inv, drop_part):
         points = data_dict['points']
-        num_points = mask.shape[0]
-        if isinstance(points, torch.Tensor):
-            raw_points = points.new_zeros([num_points, points.shape[-1]])
-            raw_points[mask] = points
-            raw_points[mask_inv] = points.new_tensor(drop_part)
-        else:
-            raw_points = np.zeros([num_points, points.shape[-1]])
-            raw_points[mask] = data_dict['points']
-            raw_points[mask_inv] = drop_part
-
+        raw_points = points.new_zeros([mask.size(0), points.size(-1)])
+        raw_points[mask] = points
+        raw_points[mask_inv] = drop_part.to(points.device)
         data_dict['points'] = raw_points
 
     def forward(self, data_dict, mask, mask_inv, drop_part):
-        data_dict['points'] = data_dict['points'][mask]
+        if 'points' in data_dict:
+            data_dict['points'] = data_dict['points'][mask]
 
 
 @AUGMENTOR.register_module('frustum_noise', 'frustum_jitter')
@@ -353,29 +301,27 @@ class FrustumJitter(Augmentor):
         self.std = abs(kwargs.get('std', 0.5))
 
     def params(self, data_dict):
-        points = data_dict['points']
-        handle = torch if isinstance(points, torch.Tensor) else np
+        if 'points' in data_dict:
+            head = self.uniform(self.head[0], self.head[1])
+            width = self.uniform(0.0, np.pi / 4)
 
-        head = np.random.uniform(self.head[0], self.head[1])
-        width = abs(np.random.normal(scale=np.pi / 4))
-        points_head = handle.arctan2(points[..., 1], points[..., 0])
-        out_range = angle_out_of_range(points_head, head, width, handle)
-        in_range = handle.logical_not(out_range)
-        if handle is np:
-            loc_noise = np.random.normal(scale=self.std, size=(in_range.sum(), 3))
+            points = data_dict['points']
+            point_direction = torch.arctan2(points[:, 1], points[:, 0])
+            out_range = self.angle_out_of_range(point_direction, head, width)
+            in_range = torch.logical_not(out_range)
+
+            loc_noise = self.normal(0.0, std=self.std, size=(in_range.sum(), 3))
+            return dict(mask=in_range, loc_noise=loc_noise)
         else:
-            loc_noise = torch.randn(size=(in_range.sum(), 3), device=points.device) * self.std
-        return dict(mask=in_range, loc_noise=loc_noise)
+            return dict(mask=None, loc_noise=None)
 
     def backward(self, data_dict, mask, loc_noise):
         self.forward(data_dict, mask, -loc_noise)
 
     def forward(self, data_dict, mask, loc_noise):
-        points = data_dict['points']
-        if isinstance(points, torch.Tensor):
-            mask = points.new_tensor(mask, dtype=torch.bool)
-            loc_noise = points.new_tensor(loc_noise)
-        data_dict['points'][mask, :3] += loc_noise
+        if 'points' in data_dict:
+            points = data_dict['points']
+            data_dict['points'][mask, :3] += loc_noise.to(points.device)
 
 
 @AUGMENTOR.register_module('box_rotate', 'local_rotate')
@@ -383,39 +329,44 @@ class BoxRotate(Augmentor):
     def __init__(self, kwargs):
         super().__init__(kwargs)
         self.range = kwargs.get('range', [-np.pi / 4, np.pi / 4])
-
-        if not isinstance(self.range, list):
-            self.range = [abs(self.range)]
-        if len(self.range) == 1:
-            self.range = [-self.range[0], self.range[0]]
+        assert len(self.range) == 2
 
     @staticmethod
     def rotate_boxes_local(boxes, rot):
-        boxes = GlobalRotate.rotate_boxes(boxes, rot, globally=False)
+        if boxes.size(0):
+            boxes = GlobalRotate.rotate_boxes(boxes, rot, locally=True)
         return boxes
 
     @staticmethod
     def rotate_points_local(points, rots, masks, boxes):
-        for mask, box, rot in zip(masks, boxes, rots):
-            offset = box[:3]
-            points_of_box = points[mask]
-            points_of_box[:, :3] -= offset
-            points_of_box = GlobalRotate.rotate_points(points_of_box, rot)
-            points_of_box[:, :3] += offset
-            points[mask] = points_of_box
+        if boxes.size(0):
+            for mask, box, rot in zip(masks, boxes, rots):
+                offset = box[:3]
+                points_of_box = points[mask]
+                points_of_box[:, :3] -= offset
+                points_of_box = GlobalRotate.rotate_points(points_of_box, rot)
+                points_of_box[:, :3] += offset
+                points[mask] = points_of_box
         return points
 
     def params(self, data_dict):
-        masks = try_points_in_boxes_masks_from_cache(data_dict)
-        rot_noise = np.random.uniform(self.range[0], self.range[1], data_dict['gt_boxes'].shape[0])
-        return dict(masks=masks, rot_noise=rot_noise)
+        if 'gt_boxes' in data_dict:
+            masks = self.try_points_in_boxes_masks_from_cache(data_dict)
+            rot_noise = self.uniform(self.range[0], self.range[1], size=data_dict['gt_boxes'].size(0))
+            return dict(masks=masks, rot_noise=rot_noise)
+        else:
+            return dict(masks=None, rot_noise=None)
 
     def backward(self, data_dict, masks, rot_noise):
         self.forward(data_dict, masks, -rot_noise)
 
     def forward(self, data_dict, masks, rot_noise):
-        data_dict['points'] = self.rotate_points_local(data_dict['points'], rot_noise, masks, data_dict['gt_boxes'])
-        data_dict['gt_boxes'] = self.rotate_boxes_local(data_dict['gt_boxes'], rot_noise)
+        if 'gt_boxes' in data_dict:
+            boxes = data_dict['gt_boxes']
+            data_dict['gt_boxes'] = self.rotate_boxes_local(boxes, rot_noise)
+            if 'points' in data_dict:
+                points = data_dict['points']
+                data_dict['points'] = self.rotate_points_local(points, rot_noise, masks, boxes)
 
 
 @AUGMENTOR.register_module('box_translate', 'local_translate')
@@ -423,39 +374,42 @@ class BoxTranslate(Augmentor):
     def __init__(self, kwargs):
         super().__init__(kwargs)
         self.std = kwargs.get('std', [0, 0, 0])
-        if not isinstance(self.std, list):
-            self.std = [abs(self.std)]
-        if len(self.std) == 1:
-            self.std *= 3
+        assert len(self.std) == 3
 
     @staticmethod
     def translate_boxes_local(boxes, trans):
-        return GlobalTranslate.translate_boxes(boxes, trans)
+        if boxes.size(0):
+            boxes = GlobalTranslate.translate_boxes(boxes, trans)
+        return boxes
 
     @staticmethod
     def translate_points_local(points, trans, masks, boxes):
-        if isinstance(points, torch.Tensor):
-            offsets = torch.zeros_like(points[..., :3])
-            trans = points.new_tensor(trans)
-        else:
-            offsets = np.zeros_like(points[..., :3])
-        for mask, offset in zip(masks, trans):
-            offsets[mask] = offset
-        points[..., :3] += offsets
+        if boxes.size(0):
+            offsets = torch.zeros_like(points[:, :3])
+            for mask, offset in zip(masks, trans):
+                offsets[mask] = offset.to(points.device)
+            points[:, :3] += offsets
         return points
 
     def params(self, data_dict):
-        masks = try_points_in_boxes_masks_from_cache(data_dict)
-        trans_noise = np.random.normal(scale=self.std, size=[data_dict['gt_boxes'].shape[0], 3])
-        return dict(masks=masks, trans_noise=trans_noise)
+        if 'gt_boxes' in data_dict:
+            masks = self.try_points_in_boxes_masks_from_cache(data_dict)
+            num_boxes = data_dict['gt_boxes'].size(0)
+            trans_noise = self.normal(0.0, [self.std] * num_boxes)
+            return dict(masks=masks, trans_noise=trans_noise)
+        else:
+            return dict(masks=None, trans_noise=None)
 
     def backward(self, data_dict, masks, trans_noise):
         self.forward(data_dict, masks, -trans_noise)
 
     def forward(self, data_dict, masks, trans_noise):
-        data_dict['points'] = self.translate_points_local(data_dict['points'], trans_noise, masks,
-                                                          data_dict['gt_boxes'])
-        data_dict['gt_boxes'] = self.translate_boxes_local(data_dict['gt_boxes'], trans_noise)
+        if 'gt_boxes' in data_dict:
+            boxes = data_dict['gt_boxes']
+            data_dict['gt_boxes'] = self.translate_boxes_local(boxes, trans_noise)
+            if 'points' in data_dict:
+                points = data_dict['points']
+                data_dict['points'] = self.translate_points_local(points, trans_noise, masks, boxes)
 
 
 @AUGMENTOR.register_module('box_scale', 'local_scale')
@@ -463,40 +417,43 @@ class BoxScale(Augmentor):
     def __init__(self, kwargs):
         super().__init__(kwargs)
         self.range = kwargs.get('range', [0.95, 1.05])
-        if not isinstance(self.range, list):
-            self.range = [abs(self.range)]
-        if len(self.range) == 1:
-            self.range = [1 - self.range[0], 1 + self.range[0]]
+        assert len(self.range) == 2
 
     @staticmethod
     def scale_boxes_local(boxes, scale):
-        if isinstance(boxes, torch.Tensor):
-            scale = boxes.new_tensor(scale)
-        boxes[..., 3:6] *= scale[..., None]
+        if boxes.size(0):
+            boxes[:, 3:6] *= scale.to(boxes.device).unsqueeze(1)
         return boxes
 
     @staticmethod
     def scale_points_local(points, scales, masks, boxes):
-        for mask, box, scale in zip(masks, boxes, scales):
-            offset = box[:3]
-            points_of_box = points[mask]
-            points_of_box[:, :3] -= offset
-            points_of_box = GlobalScale.scale_points(points_of_box, scale)
-            points_of_box[:, :3] += offset
-            points[mask] = points_of_box
+        if boxes.size(0):
+            for index, offset, scale in zip(masks, boxes[:, :3], scales):
+                points_of_box = points[index]
+                points_of_box[:, :3] -= offset
+                points_of_box = GlobalScale.scale_points(points_of_box, scale)
+                points_of_box[:, :3] += offset
+                points[index] = points_of_box
         return points
 
     def params(self, data_dict):
-        scale_noise = np.random.uniform(self.range[0], self.range[1], data_dict['gt_boxes'].shape[0])
-        masks = try_points_in_boxes_masks_from_cache(data_dict)
-        return dict(masks=masks, scale_noise=scale_noise)
+        if 'gt_boxes' in data_dict:
+            masks = self.try_points_in_boxes_masks_from_cache(data_dict)
+            scale_noise = self.uniform(self.range[0], self.range[1], size=data_dict['gt_boxes'].size(0))
+            return dict(masks=masks, scale_noise=scale_noise)
+        else:
+            return dict(masks=None, scale_noise=None)
 
     def backward(self, data_dict, masks, scale_noise):
         self.forward(data_dict, masks, 1.0 / scale_noise)
 
     def forward(self, data_dict, masks, scale_noise):
-        data_dict['points'] = self.scale_points_local(data_dict['points'], scale_noise, masks, data_dict['gt_boxes'])
-        data_dict['gt_boxes'] = self.scale_boxes_local(data_dict['gt_boxes'], scale_noise)
+        if 'gt_boxes' in data_dict:
+            boxes = data_dict['gt_boxes']
+            data_dict['gt_boxes'] = self.scale_boxes_local(boxes, scale_noise)
+            if 'points' in data_dict:
+                points = data_dict['points']
+                data_dict['points'] = self.scale_points_local(points, scale_noise, masks, boxes)
 
 
 @AUGMENTOR.register_module('box_flip', 'local_flip')
@@ -504,37 +461,45 @@ class BoxFlip(Augmentor):
     def __init__(self, kwargs):
         super().__init__(kwargs)
         self.axis = kwargs.get('axis', ['x'])
-        if not isinstance(self.axis, list):
-            self.axis = [self.axis]
 
     @staticmethod
     def flip_points_local(points, axes_x, axes_y, masks, boxes):
-        for mask, box, a_x, a_y in zip(masks, boxes, axes_x, axes_y):
-            offset = box[:3]
-            points_of_box = points[mask]
-            points_of_box[:, :3] -= offset
-            points_of_box = GlobalFlip.flip_points(points_of_box, a_x, a_y)
-            points_of_box[:, :3] += offset
-            points[mask] = points_of_box
+        if boxes.size(0):
+            for index, offset, a_x, a_y in zip(masks, boxes[:, :3], axes_x, axes_y):
+                points_of_box = points[index]
+                points_of_box[:, :3] -= offset
+                points_of_box = GlobalFlip.flip_points(points_of_box, a_x, a_y)
+                points_of_box[:, :3] += offset
+                points[index] = points_of_box
         return points
 
     @staticmethod
     def flip_boxes_local(boxes, axes_x, axes_y):
-        for i in range(boxes.shape[0]):
-            boxes[i] = GlobalFlip.flip_boxes(boxes[i], axes_x[i], axes_y[i], globally=False)
+        if boxes.size(0):
+            for i in range(boxes.shape[0]):
+                boxes[i:i + 1] = GlobalFlip.flip_boxes(boxes[i:i + 1], axes_x[i], axes_y[i], locally=True)
         return boxes
 
     def params(self, data_dict):
-        params = {k: enable(0.5, size=data_dict['gt_boxes'].shape[0]) if k in self.axis else False for k in ['x', 'y']}
-        params.update(masks=try_points_in_boxes_masks_from_cache(data_dict))
-        return params
+        if 'gt_boxes' in data_dict:
+            num_boxes = data_dict['gt_boxes'].size(0)
+            masks = self.try_points_in_boxes_masks_from_cache(data_dict)
+            x = self.enable(0.5, size=num_boxes) if 'x' in self.axis else torch.zeros([num_boxes], dtype=torch.bool)
+            y = self.enable(0.5, size=num_boxes) if 'y' in self.axis else torch.zeros([num_boxes], dtype=torch.bool)
+            return dict(x=x, y=y, masks=masks)
+        else:
+            return dict(x=None, y=None, masks=None)
 
     def backward(self, data_dict, masks, x, y):
         self.forward(data_dict, masks, x, y)
 
     def forward(self, data_dict, masks, x, y):
-        data_dict['points'] = self.flip_points_local(data_dict['points'], x, y, masks, data_dict['gt_boxes'])
-        data_dict['gt_boxes'] = self.flip_boxes_local(data_dict['gt_boxes'], x, y)
+        if 'gt_boxes' in data_dict:
+            boxes = data_dict['gt_boxes']
+            data_dict['gt_boxes'] = self.flip_boxes_local(boxes, x, y)
+            if 'points' in data_dict:
+                points = data_dict['points']
+                data_dict['points'] = self.flip_points_local(points, x, y, masks, boxes)
 
 
 # @AUGMENTS.register_module('part_drop')
@@ -645,13 +610,30 @@ class BoxFlip(Augmentor):
 class AugmentorList:
     def __init__(self, aug_list):
         self.augmentor_list = [AUGMENTOR.from_cfg(tf) for tf in aug_list]
+        self.np_keys = None
+
+    def tensor(self, data_dict):
+        self.np_keys = {'points': False, 'gt_boxes': False}
+        for k in self.np_keys:
+            if k in data_dict and isinstance(data_dict[k], np.ndarray):
+                self.np_keys[k] = True
+                data_dict[k] = torch.from_numpy(data_dict[k])
+
+    def numpy(self, data_dict):
+        for k in self.np_keys:
+            if self.np_keys[k]:
+                data_dict[k] = data_dict[k].numpy()
 
     def __call__(self, data_dict, aug_logs={}):
+        self.tensor(data_dict)
         for aug in self.augmentor_list:
             aug(data_dict, aug_logs.get(aug.name, None))
+        self.numpy(data_dict)
         return data_dict
 
     def invert(self, data_dict, aug_logs={}):
+        self.tensor(data_dict)
         for aug in self.augmentor_list[::-1]:
             aug.invert(data_dict, aug_logs.get(aug.name, None))
+        self.numpy(data_dict)
         return data_dict
