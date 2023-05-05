@@ -65,16 +65,18 @@ class DistRunner(DistRunnerBase):
     @Hook.auto_call
     def forward(self, model, batch_dict):
         pred_ret_dict, ext_info_dict = model(batch_dict)
-        if self.mode == self.state: self.cur_iters += 1
+        if self.mode == self.state:
+            self.cur_iters += 1
         return pred_ret_dict, ext_info_dict
 
     @Hook.auto_call
     def batch_loop(self, model, dataloader):
-        self.logger.info(f"********* Start EPOCH {self.cur_epochs} ({self.state}) *********")
+        # self.logger.info(f"********* Start EPOCH {self.cur_epochs} ({self.state}) *********")
         for self.inner_iters, batch_dict in enumerate(dataloader):
             dataloader.dataset.load_data_to_gpu(batch_dict)
             self.forward(model=model, batch_dict=batch_dict)
-        if self.mode == self.state: self.cur_epochs += 1
+        if self.mode == self.state:
+            self.cur_epochs += 1
 
     @Hook.auto_call
     def epoch_loop(self, dataloaders):

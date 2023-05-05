@@ -1,10 +1,10 @@
-cache = False
+cache = True
 ss3d = dict(
     iter_num=10,
     epochs=6,
-    bank=dict(db_info_path='kitti_dbinfos_train.pkl',
-              bk_info_path='ss3d/bkinfos_train.pkl',
-              pseudo_database_path='ss3d/pseudo_database'),
+    instance_bank=dict(db_info_path='kitti_dbinfos_train.pkl',
+                       bk_info_path='ss3d/bkinfos_train.pkl',
+                       pseudo_database_path='ss3d/pseudo_database'),
     global_augments=[
         dict(type='global_flip', prob=1.0, range=[0, 0]),
         dict(type='global_scale', prob=1.0, range=[0.8, 1.2]),
@@ -17,7 +17,7 @@ ss3d = dict(
         pred_infos_path='ss3d/fill_pts_infos_train.pkl'
     ),
     missing_anno_ins_mining=dict(
-        visualize=False,
+        visualize=True,
         get_points_func='get_lidar',
         score_threshold_low=0.1,
         score_threshold_high=0.9,

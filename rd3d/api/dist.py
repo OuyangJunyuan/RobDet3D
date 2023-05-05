@@ -88,17 +88,19 @@ def all_gather_object(**kwargs):
     :param kwargs: object to be gathered in-place.
     """
     state = get_dist_state()
+    if state.num_processes <= 1:
+        return
+
     opt = kwargs.get('opt', None)
     for k, v in kwargs.items():
-        if state.num_processes > 1:
-            output_list = [None] * state.num_processes
-            dist.all_gather_object(output_list, v)
-            if state.process_index == 0:
-                if isinstance(v, list):
-                    if opt == 'merge':
-                        kwargs[k] = sum([list(res) for res in zip(*output_list)])
-                    else:
-                        kwargs[k] = sum(output_list)
-                if isinstance(v, dict):
-                    for d in output_list:
-                        kwargs[k].update(d)
+        output_list = [None] * state.num_processes
+        dist.all_gather_object(output_list, v)
+        if state.process_index == 0:
+            if isinstance(v, list):
+                if opt == 'merge':
+                    kwargs[k] = sum([list(res) for res in zip(*output_list)])
+                else:
+                    kwargs[k] = sum(output_list)
+            if isinstance(v, dict):
+                for d in output_list:
+                    kwargs[k].update(d)
