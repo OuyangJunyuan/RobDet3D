@@ -2,33 +2,41 @@ import open3d
 import numpy as np
 
 
-def add_points(vis, x, c=None):
-    pts = open3d.geometry.PointCloud()
-    pts.points = open3d.utility.Vector3dVector(x[:, :3])
+def add_points(vis, points, colors=None, offset=None):
+    def color_map(x):
+        import matplotlib.pyplot as plt
+        cmap = plt.get_cmap('turbo')
+        x = x - x.min()
+        # x /= x.max()
+        x = cmap(x)[:, :3].reshape(-1, 3)  # rgba -> rgb
+        return x
 
-    if c is None:
-        if x.shape[-1] > 3:
-            import matplotlib.pyplot as plt
-            cmap = plt.get_cmap('turbo')
-            c = x[:, -1]
-            c = c - c.min()
-            # c /= c.max()
-            c = cmap(c)[:, :3].reshape(-1, 3)  # rgba -> rgb
-            colors = c
+    xyz = points[:, :3]
+    if offset is not None:
+        xyz += offset
+
+    if colors is None:
+        if points.shape[-1] > 3:
+            colors = color_map(points[:, -1])
         else:
             colors = open3d.utility.Vector3dVector()
-    elif isinstance(c, list):
-        colors = np.ones_like(x) * np.array(c).reshape(1, 3)
-    else:
-        colors = c
-    pts.colors = open3d.utility.Vector3dVector(np.clip(colors, 0.1, 1 - 0.1))
-    vis.add_geometry(pts)
+    elif isinstance(colors, list):
+        colors = np.array(colors).reshape(1, 3)
+        colors = np.ones_like(xyz) * colors
+
+    o3d_geometry = open3d.geometry.PointCloud()
+    o3d_geometry.points = open3d.utility.Vector3dVector(np.ascontiguousarray(xyz))
+    o3d_geometry.colors = open3d.utility.Vector3dVector(np.clip(np.ascontiguousarray(colors), 0, 1))
+    vis.add_geometry(o3d_geometry)
 
 
-def add_keypoint(vis, points, radius=0.05, color=None, n=None):
+def add_keypoint(vis, points, radius=0.05, color=None, offset=None):
     for i in range(points.shape[0]):
         mesh_sphere = open3d.geometry.TriangleMesh.create_sphere(radius=radius)
-        mesh_sphere.translate(points[i, :3])
+        xyz = points[i, :3]
+        if offset is not None:
+            xyz += offset
+        mesh_sphere.translate(xyz)
         mesh_sphere.compute_vertex_normals()
         if color is None:
             mesh_sphere.paint_uniform_color([0.9, 0.6, 0.2])
@@ -37,7 +45,7 @@ def add_keypoint(vis, points, radius=0.05, color=None, n=None):
         vis.add_geometry(mesh_sphere)
 
 
-def add_boxes(vis, boxes, labels=None, scores=None, color=(1, 0, 0)):
+def add_boxes(vis, boxes, labels=None, scores=None, color=None, offset=None):
     def translate_boxes_to_open3d_instance(gt_boxes):
         """
                  4-------- 6
@@ -49,6 +57,8 @@ def add_boxes(vis, boxes, labels=None, scores=None, color=(1, 0, 0)):
               2 -------- 0
         """
         center = gt_boxes[0:3]
+        if offset is not None:
+            center += offset
         lwh = gt_boxes[3:6]
         axis_angles = np.array([0, 0, gt_boxes[6] + 1e-10])
         rot = open3d.geometry.get_rotation_matrix_from_axis_angle(axis_angles)
@@ -75,11 +85,14 @@ def add_boxes(vis, boxes, labels=None, scores=None, color=(1, 0, 0)):
 
     for i in range(boxes.shape[0]):
         box_lines = translate_boxes_to_open3d_instance(boxes[i])
-        if labels is not None:
-            color = box_colormap[labels[i]]
-        color = np.array(np.clip(color, 0.01, 1 - 0.01))
+        if color is None:
+            c = box_colormap[labels[i]] if labels is not None else (1, 0, 0)
+        else:
+            c = color[i] if len(color.shape) and color.shape[0] > 1 else color
+        c = np.array(np.clip(c, 0, 1))
+
         num_lines = np.asarray(box_lines.lines).shape[0]
-        box_lines.colors = open3d.utility.Vector3dVector(np.repeat(color[None, ...], repeats=num_lines, axis=0))
+        box_lines.colors = open3d.utility.Vector3dVector(np.repeat(c[None, ...], repeats=num_lines, axis=0))
         vis.add_geometry(box_lines)
     return vis
 
@@ -106,21 +119,40 @@ def viz_points(points):
     vis.destroy_window()
 
 
-def viz_scene(points, boxes, center=None, vis=None):
-    def check_numpy(*objs):
-        return [obj if isinstance(obj, np.ndarray) else obj.cpu().numpy().copy() for obj in objs]
+def viz_scene(points=None, boxes=None, key_points=None, center=None, vis=None):
+    def check(obj):
+        to_numpy = lambda x: x.copy() if isinstance(x, np.ndarray) else x.cpu().numpy().copy()
+        if obj is None:
+            return None, None
+        if isinstance(obj, (list, tuple)):
+            obj, obj_color = obj
+            return to_numpy(obj), obj_color
+        else:
+            return to_numpy(obj), None
 
-    points, boxes = check_numpy(points, boxes)
-    if points.shape[-1] == 5: points = points[:, 1:]
-    xyz, c = points[:, :3], points[:, 3:]
+    points, points_color = check(points)
+    boxes, boxes_color = check(boxes)
+    key_points, key_points_color = check(key_points)
 
     show = vis is None
     vis = add_scene() if vis is None else vis
-    if center is not None:
-        xyz, boxes[:, :3] = xyz + center, boxes[:, :3] + center
-    points = np.concatenate([xyz, c], axis=-1)
-    add_points(vis, points, None)
-    add_boxes(vis, boxes)
+
+    if points is not None:
+        if points.shape.__len__() == 3:
+            points = points[-1]
+        if points.shape[-1] == 5:
+            points = points[:, 1:]
+        add_points(vis, points, colors=points_color, offset=center)
+
+    if boxes is not None:
+        if boxes.shape.__len__() == 3:
+            boxes = boxes[-1]
+        add_boxes(vis, boxes, color=boxes_color, offset=center)
+
+    if key_points is not None:
+        if key_points.shape.__len__() == 3:
+            key_points = key_points[-1]
+        add_keypoint(vis, key_points, color=key_points_color, offset=center)
 
     if show:
         vis.run()
@@ -136,9 +168,9 @@ def viz_scenes(*scenes, offset=None, origin=False, title="rd3d"):
         scenes = [(scenes[0][i], scenes[1][i]) for i in range(scenes[0].shape[0])]
 
     num_scenes = len(scenes)
-    for i, (points, boxes) in zip(np.linspace(-num_scenes / 2, num_scenes / 2, num_scenes), scenes):
-        center = np.array(offset).reshape([1, 3]) * i
-        viz_scene(points, boxes, center, vis=vis)
+    for i, (points, boxes, *_) in zip(np.linspace(-num_scenes / 2, num_scenes / 2, num_scenes), scenes):
+        center = np.array(offset) * i
+        viz_scene(points, boxes, *_, center=center, vis=vis)
 
     vis.run()
     vis.destroy_window()

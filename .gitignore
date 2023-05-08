@@ -34,3 +34,4 @@ version.py
 /configs/iassd/wzh/
 /configs/3dssd_sasa/ablation_study/
 /configs/
+/cache/

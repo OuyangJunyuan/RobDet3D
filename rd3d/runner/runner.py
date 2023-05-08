@@ -23,6 +23,11 @@ class DistRunnerBase:
         from . import processbar_hook, tracker_hook, checkpoint_hook
         for m in getattr(self, 'custom_import', []): importlib.import_module(m)
 
+    @staticmethod
+    def member(func):
+        setattr(DistRunnerBase, func.__name__, func)
+        return func
+
     @property
     def training(self):
         return self.state == 'train'

@@ -26,9 +26,9 @@ RUN = dict(
     grad_norm_clip=10.0,
 
     workflows=dict(
-        train=[dict(state='train', split='train', epochs=50)] +
+        train=[dict(state='train', split='train', epochs=70)] +
               [dict(state='train', split='train', epochs=1),
-               dict(state='test', split='test', epochs=1)] * 30,
+               dict(state='test', split='test', epochs=1)] * 10,
         test=[dict(state='test', split='test', epochs=1)]
     ),
     tracker=dict(
