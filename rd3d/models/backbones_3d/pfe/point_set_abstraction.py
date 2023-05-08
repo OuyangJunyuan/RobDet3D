@@ -70,7 +70,9 @@ class GeneralPointSetAbstraction(nn.Module):
             if self.sampler_output_indices:
                 sample_ind = [s(xyz=xyz, feats=feats, bid=bid) for s in self.samplers]  # (B,M)
                 sample_ind = sample_ind[0] if len(sample_ind) == 1 else torch.cat(sample_ind, dim=-1)
+                assert sample_ind.max() < xyz.shape[1]
                 new_xyz = gather(xyz, sample_ind)  # (B,M,3)
+                torch.cuda.synchronize()
                 new_feats = gather(feats, sample_ind) if self.need_new_feats and not new_feats else new_feats  # (B,M,C)
             else:
                 new_xyz = self.samplers[0](xyz=xyz, feats=feats)

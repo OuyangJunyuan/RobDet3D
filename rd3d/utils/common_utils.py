@@ -314,7 +314,7 @@ def _torch_gather(x: torch.tensor, ind: torch.tensor, ind_bid: torch.tensor = No
         if channel_first:
             ret = x.gather(-1, ind.view(b, 1, -1).expand(-1, x.shape[1], -1)).view(b, -1, *s)
         else:
-            ret = x.gather(1, ind.view(b, -1, 1).expand(-1, -1, x.shape[-1])).view(b, *s, -1)
+             ret = x.gather(1, ind.view(b, -1, 1).expand(-1, -1, x.shape[-1])).view(b, *s, -1)
 
     else:  # stack gather from batched data
         assert ind_bid.is_contiguous()

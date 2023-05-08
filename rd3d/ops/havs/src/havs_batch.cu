@@ -291,6 +291,7 @@ std::vector<at::Tensor> HAVSamplingBatchWrapper(at::Tensor &sources,  // [in]
     auto point_masks_tensor = sources.new_empty({num_batch, num_src}, TorchType<char>);
     auto voxel_infos_tensor = sources.new_empty({num_batch, 3 * 3}, TorchType<float>);
 
+    sampled_ids.zero_();
     batch_masks_tensor.zero_();
     num_sampled_tensor.zero_();
     dist_tables_tensor.fill_(at::Scalar(FLT_MAX));

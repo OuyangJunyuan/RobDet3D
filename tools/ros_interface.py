@@ -19,7 +19,8 @@ from rospkg.rospack import get_package_name
 
 cfg_file = PROJECT_ROOT / 'configs/iassd/wzh/iassd_hvcsx2_gqx2_exp.py'
 ckpt_file = PROJECT_ROOT / 'tools/models/wzh/iassd_hvcsx2_gqx2_exp_1x4_80e_kitti_peds_fov90(default)(kitti-pretrain).pth'
-ros_topic_in = "/ouster/points"  # "/os1_cloud_node/points"
+# ros_topic_in = "/ouster/points"
+ros_topic_in = "/os1_cloud_node/points"
 ros_topic_out = "objects"
 
 
@@ -144,15 +145,15 @@ class DNNDetector:
         points_np[:, 0] = points_np_struct['x'].ravel()
         points_np[:, 1] = points_np_struct['y'].ravel()
         points_np[:, 2] = points_np_struct['z'].ravel()
-        try:
-            points_np[:, 3] = points_np_struct['intensity']
-        except:
-            pass
+        points_np[:, 3] = 0
+        # try:
+        #     points_np[:, 3] = points_np_struct['intensity']
+        # except:
+        #     pass
 
         if points_np.shape[0] < 100:
             return
         boxes, labels, scores, boundaries = self.model.inference(points_np)  # numpy in & numpy out
-
         markers = self.boxes2markers(points_msg.header, boxes)
         self.pub.publish(markers)
 
