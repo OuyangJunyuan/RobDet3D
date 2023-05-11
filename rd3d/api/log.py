@@ -52,8 +52,8 @@ class LogIterableObject:
 
 def create_logger(name=None, log_file=None, stderr=True, level=logging.INFO):
     def get_formatter():
-        name_header = '' if name is None else name
-        return '[' + name_header[:3] + ' %(asctime)s %(levelname)s' + ']' + ' %(message)s'
+        name_header = '' if name is None else (' ' + name[:3])
+        return f'[%(asctime)s %(levelname)s{name_header}] %(message)s'
 
     def stream_handler():
         import sys
@@ -68,18 +68,21 @@ def create_logger(name=None, log_file=None, stderr=True, level=logging.INFO):
         handler.setFormatter(formatter)
         return handler
 
-    formatter = logging.Formatter(get_formatter())
+    exist = name is None or name in logging.Logger.manager.loggerDict
     warped_logger = warp.get_logger(name)
     logger = warped_logger.logger
-
     logger.setLevel(level)
     logger.propagate = False  # disable the message propagation to the root logger
-    warped_logger.log = LogIterableObject(warped_logger.log)
 
-    if stderr:
-        logger.addHandler(stream_handler())
-    if log_file:
-        logger.addHandler(file_handler())
+    if not exist:
+        formatter = logging.Formatter(get_formatter())
+        if stderr:
+            logger.addHandler(stream_handler())
+        if log_file:
+            logger.addHandler(file_handler())
+
+    if not isinstance(warped_logger.log, LogIterableObject):
+        warped_logger.log = LogIterableObject(warped_logger.log)
     return warped_logger
 
 

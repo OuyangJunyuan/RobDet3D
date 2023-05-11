@@ -1,14 +1,14 @@
-import pickle
 import numpy as np
-from pathlib import Path
+from ...api import log
 from ...datasets.augmentor.transforms import AUGMENTOR, Augmentor
-from ...ops.iou3d_nms.iou3d_nms_utils import boxes_bev_iou_cpu
 
 
 @AUGMENTOR.register_module('instance_filling')
 class InstanceFilling(Augmentor):
     def __init__(self, **kwargs):
         super().__init__(kwargs)
+        self.logger = log.create_logger(name="bg")
+
         self._bank = kwargs['instance_bank']
         self._bg_miner = kwargs['background_miner']
 
@@ -63,6 +63,7 @@ class InstanceFilling(Augmentor):
                 gt_mask = np.array([ins['score'] for ins in self.bank_info[fid]]) < 0
                 num_gt = gt_mask.sum()
                 num_ins = gt_mask.shape[0]
+                assert num_ins != 0
 
                 if num_ins == 1:
                     sampled_ins_ids.append(0)
@@ -73,17 +74,19 @@ class InstanceFilling(Augmentor):
                         sampled_ins_ids.append(np.random.choice(num_ins, p=sample_prob / sample_prob.sum()))
                     except ValueError:
                         print(num_ins, sample_prob)
-                        assert num_ins != 0
                         sampled_ins_ids.append(num_ins - 1)
         else:
             raise NotImplementedError
 
-        names, boxes, points = [], [], []
+        names, boxes, points, num_pseudo = [], [], [], 0
         for fid, iid in zip(sampled_frame_ids, sampled_ins_ids):
             info = self.bank_info[fid][iid]
             names.append(info['name'])
             boxes.append(info['box3d_lidar'])
             points.append(self.bank.get_points(path=info['path']))
+            num_pseudo += info['score'] >= 0
+
+        self.logger.info(f"sample instances ({num_pseudo} pseudo / {len(names)} total) from bank")
         return names, boxes, points
 
     def params(self, data_dict):
@@ -94,6 +97,8 @@ class InstanceFilling(Augmentor):
         if frame_id in self.bg_infos and len(self.bg_infos[frame_id]) != 0:
             unreliable_instances = self.bg_infos[frame_id]
             holes = self.nms_by_volume(unreliable_instances)
+            self.logger.info(f"predicted redundant boxes {len(unreliable_instances)} -> holes {len(holes)}")
+
             num_filling_boxes = holes.shape[0]
             names, boxes, points = self.sample_instances_from_bank(num_filling_boxes)
 
