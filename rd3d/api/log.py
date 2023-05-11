@@ -83,4 +83,4 @@ def create_logger(name=None, log_file=None, stderr=True, level=logging.INFO):
     return warped_logger
 
 
-root_log = create_logger(logging.WARNING)
+root_log = create_logger(level=logging.WARNING)

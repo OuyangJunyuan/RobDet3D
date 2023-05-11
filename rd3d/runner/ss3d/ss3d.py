@@ -66,16 +66,17 @@ class UnlabeledInstanceMiningModule:
 
         boxes1, boxes2 = preds1['pred_boxes'], preds2['pred_boxes']
         n, m = boxes1.shape[0], boxes2.shape[0]
-        if n or m == 0:
-            return
-        iou = boxes_bev_iou_cpu(boxes1, boxes2)
-        ind1, ind2 = np.arange(n), np.argmax(iou, -1)
-        pairs_iou = iou[ind1, ind2]
-        keep = pairs_iou > iou_thr
+        if n == 0 or m == 0:
+            keep = ind1 = ind2 = np.array([], dtype=int)
+        else:
+            iou = boxes_bev_iou_cpu(boxes1, boxes2)
+            ind1, ind2 = np.arange(n), np.argmax(iou, -1)
+            pairs_iou = iou[ind1, ind2]
+            keep = pairs_iou > iou_thr
 
-        for arg in [preds1, preds2]:
+        for (arg, ind) in [(preds1, ind1[keep]), (preds2, ind2[keep])]:
             for key in arg.keys():
-                arg[key] = arg[key][keep]
+                arg[key] = arg[key][ind]
 
     @dist.on_rank0
     def missing_annotated_mining(self, dataloader):
@@ -97,20 +98,24 @@ class UnlabeledInstanceMiningModule:
                            (raw_points, boxes_bank),
                            offset=[0, 50, 0], title='raw/aug paired prediction')
 
+            nums1 = (len(raw_pred['pred_boxes']), len(aug_pred['pred_boxes']))
             self.score_based_filter(raw_pred, aug_pred, score_thr=self.cfg.score_threshold_high)
+            nums2 = (len(raw_pred['pred_boxes']), len(aug_pred['pred_boxes']))
             self.iou_guided_suppression(raw_pred, aug_pred, iou_thr=self.cfg.iou_threshold)
             reliable_pred = raw_pred
 
-            if reliable_pred['pred_boxes'].shape[0] > 0:
-                self.ins_bank.try_insert(fid, raw_points, **reliable_pred)
+            self.ins_bank.try_insert(fid, raw_points, **reliable_pred)
 
             if self.cfg.get('visualize', False):
                 from ...utils.viz_utils import viz_scenes
                 viz_scenes((raw_points, reliable_pred['pred_boxes']), title='mined instance')
 
             self.logger.info(f"frame {fid} "
-                             f"raw({len(raw_pred['pred_boxes'])}) "
-                             f"aug({len(aug_pred['pred_boxes'])}) "
+                             f"raw({nums1[0]}) "
+                             f"aug({nums1[1]}) "
+                             f"-> "
+                             f"raw({nums2[0]}) "
+                             f"aug({nums2[1]}) "
                              f"-> reliable({len(reliable_pred['pred_boxes'])})")
 
         self.ins_bank.save_to_disk()
@@ -161,8 +166,8 @@ class UnlabeledInstanceMiningModule:
         assert len(self.raw_scene_preds_dict) == len(self.aug_scene_preds_dict) == num_samples
         assert sum([fid in self.raw_scene_preds_dict for fid in self.aug_scene_preds_dict]) == num_samples
 
-        if not self.cfg.cache:
-            self.missing_annotated_mining(dataloader)
+        # if not self.cfg.cache:
+        self.missing_annotated_mining(dataloader)
 
         self.aug_scene_preds_dict = {}
         self.raw_scene_preds_dict = {}

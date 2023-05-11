@@ -77,7 +77,7 @@ class InstanceBankHelper:
 
         print(tb.get_string())
 
-    def viz(self, dataset, infos):
+    def viz(self, dataset, infos=None):
         from rd3d.utils import viz_utils
         if infos is None:
             mask = np.array([len(f[1]) for f in sorted(self.bk_infos.items(), key=lambda x: x[0])])
@@ -240,6 +240,8 @@ class InstanceBank(InstanceBankHelper):
         from ...ops.roiaware_pool3d.roiaware_pool3d_utils import points_in_boxes_cpu
         # TODO: we directly refuse all predictions that overlap with objs in bank
         #  without consider to update them by comparing their scores.
+        if len(pred_boxes) == 0:
+            return
         select = self.check_collision_free(frame_id, pred_boxes)
 
         boxes = pred_boxes[select]
