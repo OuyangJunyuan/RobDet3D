@@ -13,7 +13,7 @@ import torch
 @Hook.auto_call
 def add_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg_file', type=str, required=True, help='specify the config for training')
+    parser.add_argument('--cfg', type=str, required=True, help='specify the config for training')
     parser.add_argument('--ckpt', type=str, default=None, help='checkpoint to start from')
     parser.add_argument('--set', dest='set_cfgs', default=None, nargs='...', help='set extra config keys if needed')
     parser.add_argument('--seed', type=int, default=None, help='random seed')
@@ -24,7 +24,7 @@ def add_args():
 @Hook.auto_call
 def parse_config(args):
     """read config from file and cmdline"""
-    cfg = Config.fromfile(args.cfg_file)
+    cfg = Config.fromfile(args.cfg)
     cfg = Config.merge_custom_cmdline_setting(cfg, args.set_cfgs) if args.set_cfgs is not None else cfg
     cfg.RUN.seed = args.seed if args.seed is not None else time.time_ns() % (2 ** 32 - 1)
     return cfg
@@ -35,22 +35,32 @@ if __name__ == '__main__':
     args = add_args().parse_args()
     cfg = parse_config(args)
     set_random_seed(cfg.RUN.seed)
-    logger = create_logger(stderr=True)
+    logger = create_logger(name="demo")
     logger.info(f"seed: {cfg.RUN.seed}")
+
     """ build dataloaders & model & optimizer & lr_scheduler """
     dataset = build_dataloader(cfg.DATASET, training=False, logger=logger)
     model = build_detector(cfg.MODEL, dataset=dataset)
     checkpoint.load_from_file(args.ckpt, model)
     model.cuda()
     model.eval()
-    scenes = np.random.randint(0, len(dataset), args.scenes)  # [200]  #
+
     with torch.no_grad():
-        for ind in scenes:
+        for ind in np.random.randint(0, len(dataset), args.scenes):
             batch_dict = dataset.collate_batch([dataset[ind]])
             dataset.load_data_to_gpu(batch_dict)
+
             pred_dicts, _ = model(batch_dict)
-            logger.info(f"scenes: {batch_dict['frame_id']}")
-            viz_scenes((batch_dict['points'].view(-1, 5), batch_dict['gt_boxes'].view(-1, 8)),
-                       (batch_dict['points'].view(-1, 5), pred_dicts[0]['pred_boxes'].view(-1, 7)),
+
+            points = batch_dict['points'].view(-1, 5)
+            gt_boxes = batch_dict['gt_boxes'].view(-1, 8)
+            pred_boxes = pred_dicts[0]['pred_boxes'].detach().view(-1, 7)
+            pred_labels = pred_dicts[0]['pred_labels'].detach().view(-1)
+            pred_scores = pred_dicts[0]['pred_scores'].detach().view(-1)
+
+            logger.info(f"scenes: {batch_dict['frame_id'][0]}, boxes: {pred_boxes.size(0)}")
+            viz_scenes((points, gt_boxes),
+                       (points, pred_boxes),
                        offset=(0, 35, 0))
+
     logger.info("Done")

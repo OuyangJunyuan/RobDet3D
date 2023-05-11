@@ -1,74 +1,86 @@
-from accelerate import logging
+from accelerate import logging as warp
+
+logging = warp.logging
 
 
-def info_for_iterable_obj(func):
-    from typing import Iterable, Sequence, ByteString, Mapping
-    iterable = lambda x: isinstance(x, Iterable) and not isinstance(x, (str, ByteString))
+class LogIterableObject:
+    def __init__(self, f):
+        self.f = f
 
-    def make_table(data, title=None, deep=0, width=50):
-        import prettytable
+    @property
+    def iterable(self):
+        from typing import Iterable, ByteString
+        return lambda x: isinstance(x, Iterable) and not isinstance(x, (str, ByteString))
+
+    def make_table(self, data, title=None, deep=0, width=50):
         import textwrap
-        if iterable(data):
+        import prettytable
+        from typing import Iterable, Sequence, Mapping
+        if self.iterable(data):
             kvs = list(data.items() if isinstance(data, Mapping) else enumerate(data))
             """有标题 | 是字典 | 元素全可迭代 ==> 以表格形式输出"""
             if title or isinstance(data, Mapping) or sum([isinstance(v, Iterable) for _, v in kvs]):
                 tb = prettytable.PrettyTable(title, header=title is not None)
                 tb.set_style(prettytable.SINGLE_BORDER)
-                tb.add_rows([[k, make_table(data=v, deep=deep + 1, width=width)] for k, v in kvs])
+                tb.add_rows([[k, self.make_table(data=v, deep=deep + 1, width=width)] for k, v in kvs])
                 return tb.get_string(fields=tb.field_names[1:], border=False) \
                     if isinstance(data, Sequence) and deep else tb.get_string()
         return textwrap.fill(data.__str__(), width=width) if width else data.__str__()
 
-    def wrapper(msg, *args, **kwargs):
-        if iterable(msg):
+    def log(self, level, msg, *args, **kwargs):
+        if self.iterable(msg):
             f = kwargs.pop('exclude', None)
             width = kwargs.pop('width', 0)
             msg = msg if f is None else {k: v for k, v in msg.items() if k not in f}
-            for msg in make_table(msg, title=kwargs.pop('title', None), width=width).split(sep='\n'):
-                func(msg, *args, **kwargs)
+            msgs = self.make_table(msg, title=kwargs.pop('title', None), width=width).split(sep='\n')
+            for msg in msgs:
+                self.f(level, msg, *args, **kwargs)
         else:
-            func(msg, *args, **kwargs)
+            self.f(level, msg, *args, **kwargs)
 
-    return wrapper
-
-
-def create_logger(log_file=None, stderr=True):
-    if not hasattr(create_logger, 'logger'):
-        logger = logging.get_logger(__name__)
-
-        logger.logger.setLevel(logging.logging.INFO)
-        formatter = logging.logging.Formatter('%(asctime)s  %(levelname)5s  %(message)s')
-
-        """log to stderr"""
-        if stderr:
-            console = logging.logging.StreamHandler()
-            console.setLevel(logging.logging.INFO)
-            console.setFormatter(formatter)
-            logger.logger.addHandler(console)
-
-        """"log to file"""
-        if log_file is not None:
-            file_handler = logging.logging.FileHandler(filename=log_file)
-            file_handler.setLevel(logging.logging.INFO)
-            file_handler.setFormatter(formatter)
-            logger.logger.addHandler(file_handler)
-
-        logger.logger.propagate = False  # 否则会让root logger也一起发出日志
-        logger.info = info_for_iterable_obj(logger.info)
-        create_logger.logger = logger
-    return create_logger.logger
+    def __call__(self, level, msg, *args, **kwargs):
+        if self.iterable(msg):
+            f = kwargs.pop('exclude', None)
+            width = kwargs.pop('width', 0)
+            msg = msg if f is None else {k: v for k, v in msg.items() if k not in f}
+            msgs = self.make_table(msg, title=kwargs.pop('title', None), width=width).split(sep='\n')
+            for msg in msgs:
+                self.f(level, msg, *args, **kwargs)
+        else:
+            self.f(level, msg, *args, **kwargs)
 
 
-class log_to_file:
-    def __init__(self) -> None:
-        pass
+def create_logger(name=None, log_file=None, stderr=True, level=logging.INFO):
+    def get_formatter():
+        name_header = '' if name is None else name
+        return '[' + name_header[:3] + ' %(asctime)s %(levelname)s' + ']' + ' %(message)s'
 
-    def __enter__(self) -> None:
-        for handle in create_logger.logger.logger.handlers:
-            if not isinstance(handle, logging.logging.FileHandler):
-                handle.setLevel(logging.logging.FATAL)
+    def stream_handler():
+        import sys
+        handler = logging.StreamHandler(sys.stderr)
+        handler.setLevel(level)
+        handler.setFormatter(formatter)
+        return handler
 
-    def __exit__(self, exc_type, exc_value, traceback) -> None:
-        for handle in create_logger.logger.logger.handlers:
-            if not isinstance(handle, logging.logging.FileHandler):
-                handle.setLevel(logging.logging.INFO)
+    def file_handler():
+        handler = logging.FileHandler(filename=log_file)
+        handler.setLevel(level)
+        handler.setFormatter(formatter)
+        return handler
+
+    formatter = logging.Formatter(get_formatter())
+    warped_logger = warp.get_logger(name)
+    logger = warped_logger.logger
+
+    logger.setLevel(level)
+    logger.propagate = False  # disable the message propagation to the root logger
+    warped_logger.log = LogIterableObject(warped_logger.log)
+
+    if stderr:
+        logger.addHandler(stream_handler())
+    if log_file:
+        logger.addHandler(file_handler())
+    return warped_logger
+
+
+root_log = create_logger(logging.WARNING)

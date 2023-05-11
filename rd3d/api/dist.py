@@ -30,6 +30,10 @@ def on_rank0(func):
     return wrapper
 
 
+def is_rank0():
+    return get_dist_state().process_index == 0
+
+
 class barrier:
     def __init__(self):
         self.num_processes = get_dist_state().num_processes
@@ -91,16 +95,22 @@ def all_gather_object(**kwargs):
     if state.num_processes <= 1:
         return
 
-    opt = kwargs.get('opt', None)
+    opt = kwargs.pop('opt', None)
     for k, v in kwargs.items():
         output_list = [None] * state.num_processes
         dist.all_gather_object(output_list, v)
-        if state.process_index == 0:
-            if isinstance(v, list):
-                if opt == 'merge':
-                    kwargs[k] = sum([list(res) for res in zip(*output_list)])
-                else:
-                    kwargs[k] = sum(output_list)
-            if isinstance(v, dict):
-                for d in output_list:
-                    kwargs[k].update(d)
+        # if state.process_index == 0:
+        if isinstance(v, list):
+            if opt == 'merge':
+                kwargs[k] = sum([list(res) for res in zip(*output_list)])
+            else:
+                kwargs[k] = sum(output_list)
+        if isinstance(v, dict):
+            for d in output_list:
+                kwargs[k].update(d)
+
+
+if get_dist_state().num_processes > 1:
+    import torch
+
+    torch.multiprocessing.set_sharing_strategy('file_system')

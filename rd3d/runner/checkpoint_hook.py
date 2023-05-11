@@ -5,7 +5,7 @@ import torch
 import shutil
 from collections import defaultdict
 from ..api.dist import on_rank0, acc
-from ..api import checkpoint
+from ..api import checkpoint, log
 from ..utils.base import Hook
 
 
@@ -14,6 +14,7 @@ class CheckPointHookHelper:
         self.metric_trackers = {}
         self.best_model = defaultdict(list)
         self.model_zoom = 'tools/models'
+        self.logger = log.create_logger("ckpt helper", stderr=False)
 
     @staticmethod
     def try_load_checkpoint(run):
@@ -82,9 +83,9 @@ class CheckPointHookHelper:
             self.best_model[key].append(filepath)
             shutil.copy(ckpt, self.best_model[key][-1])
 
-            run.logger.info(f"************************"
-                            f"save best checkpoint to {self.best_model[key][-1]}@{epoch_mark}"
-                            f"************************")
+            self.logger.info(f"************************"
+                             f"save best checkpoint to {self.best_model[key][-1]}@{epoch_mark}"
+                             f"************************")
 
     def save_best_ckpt_to_model_zoom(self, run):
         for key, file_list in self.best_model.items():
@@ -99,22 +100,21 @@ class CheckPointHookHelper:
                 shutil.copy(file_list[-1], filepath)
                 # self.upload_wandb(filepath, f'{model_name}', alias=['latest', run.tags.experiment])
 
-    @staticmethod
-    def remove_older_ckpt(run):
+    def remove_older_ckpt(self, run):
         ckpt_list = checkpoint.potential_ckpts(None, run.ckpt_dir)
         if len(ckpt_list) >= run.checkpoints.max:
             for cur_file_idx in range(0, len(ckpt_list) - run.checkpoints.max + 1):
                 os.remove(ckpt_list[cur_file_idx])
+                self.logger.info(f"remove {ckpt_list[cur_file_idx]}")
 
-    @staticmethod
-    def save_this_ckpt(run):
+    def save_this_ckpt(self, run):
         ckpt_name = run.ckpt_dir / f'{checkpoint.CKPT_PATTERN}{run.cur_epochs}.pth'
         checkpoint.save_to_file(filename=ckpt_name,
                                 runner=run,
                                 model=run.model,
                                 optimizer=run.optimizer,
                                 scheduler=run.scheduler)
-        run.logger.info(f"*************** Save {ckpt_name.name} *****************")
+        self.logger.info(f"save {ckpt_name.name}")
         run.ckpt_list.append(ckpt_name)
 
 
@@ -128,6 +128,7 @@ class CheckPointHook(CheckPointHookHelper):
         self.model_zoom = Path(run.checkpoints.get('model_zoom', self.model_zoom))
         self.model_zoom.mkdir(exist_ok=True, parents=True)
         self.init_metrics(run)
+        self.logger = log.create_logger(name="ckpt", log_file=run.ckpt_dir / "log.txt", stderr=False)
 
     def test_one_epoch_begin(self, run, *args, **kwargs):
         if not run.mode == "train":

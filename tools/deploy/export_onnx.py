@@ -13,7 +13,7 @@ def demo():
     @Hook.auto_call
     def add_args():
         parser = argparse.ArgumentParser()
-        parser.add_argument('--cfg_file', type=Path, required=True, help='specify the config for training')
+        parser.add_argument('--cfg', type=Path, required=True, help='specify the config for training')
         parser.add_argument('--ckpt', type=str, default=None, help='checkpoint to start from')
         parser.add_argument('--onnx', type=Path, required=True, help='the path of output')
         parser.add_argument('--set', dest='set_cfgs', default=None, nargs='...', help='set extra config keys if needed')
@@ -23,7 +23,7 @@ def demo():
     @Hook.auto_call
     def parse_config(args):
         """read config from file and cmdline"""
-        cfg = Config.fromfile(args.cfg_file)
+        cfg = Config.fromfile(args.cfg)
         cfg = Config.merge_custom_cmdline_setting(cfg, args.set_cfgs) if args.set_cfgs is not None else cfg
         cfg.RUN.seed = args.seed if args.seed is not None else time.time_ns() % (2 ** 32 - 1)
         return cfg
@@ -31,7 +31,7 @@ def demo():
     args = add_args().parse_args()
     cfg = parse_config(args)
     set_random_seed(cfg.RUN.seed)
-    logger = create_logger(stderr=True)
+    logger = create_logger(name="onnx")
     logger.info(f"seed: {cfg.RUN.seed}")
     """ build dataloaders & model """
     dataloader = build_dataloader(cfg.DATASET, cfg.RUN, training=False, logger=logger)
@@ -71,7 +71,7 @@ if __name__ == "__main__":
         file = args.onnx.stem
     else:
         fold = args.onnx
-        file = args.cfg_file.stem
+        file = args.cfg.stem
     fold.mkdir(parents=True, exist_ok=True)
 
     save_path = export_onnx()

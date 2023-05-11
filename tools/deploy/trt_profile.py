@@ -78,7 +78,7 @@ def main():
     parser.add_argument('--engine', type=Path)
     parser.add_argument('--build_in', action='store_true', default=False)
     parser.add_argument('--points', type=int, default=16384)
-    _, dataloader, args = quick_demo(parser)
+    _, dataloader, cfgs, args = quick_demo(parser)
 
     use_build_in = args.build_in
     engine_file = args.engine

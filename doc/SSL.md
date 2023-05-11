@@ -1,3 +1,13 @@
+# pipeline
+1. 每次迭代训练前先update bank（raw/aug pair predictions）
+2. 每个epoch
+   1. 对raw点云进行无nms预测，去掉不与bank ins交叠的预测，得到可靠的背景。
+   2. 可靠背景经过 ins-bank物体填充 + gt_sampling， 是否应该先填充后加入bank的ins?因为它距离其他未标注instance的gap更小。
+   3. （不确定）进行正常的普通的augment
+   4. 进行forward和backward
+## potential problem
+1. currently we use bev iou instead of bev iou 3d.
+
 ## kitti_sparse dataset config
 
 ```shell
@@ -65,3 +75,7 @@ DistRunnerBase.mine_miss_anno_ins_one_epoch = mine_miss_anno_ins_one_epoch
 enable = True
 scheduler = build_scheduler
 ```
+---
+# NOTE
+1. use `torch.multiprocessing.set_sharing_strategy('file_system')` to solve opening too much file for shared tensor when distributed training. 
+2. use `pin_memory=False` and `persist_worker=False` to solve `pin_momoery thread exit`

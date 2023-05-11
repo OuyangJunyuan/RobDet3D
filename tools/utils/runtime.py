@@ -11,7 +11,7 @@ import torch
 @Hook.auto_call
 def add_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg_file', type=str, required=True, help='specify the config for training')
+    parser.add_argument('--cfg', type=str, required=True, help='specify the config for training')
     parser.add_argument('--ckpt', type=str, default=None, help='checkpoint to start from')
     parser.add_argument('--batch', type=int, default=None, help='random seed')
     parser.add_argument('--seed', type=int, default=None, help='random seed')
@@ -21,7 +21,7 @@ def add_args():
 @Hook.auto_call
 def parse_config(args):
     """read config from file and cmdline"""
-    cfg = Config.fromfile(args.cfg_file)
+    cfg = Config.fromfile(args.cfg)
     cfg.RUN.seed = args.seed if args.seed is not None else time.time_ns() % (2 ** 32 - 1)
     cfg.RUN.samples_per_gpu = args.batch if args.batch is not None else cfg.RUN.samples_per_gpu
     return cfg

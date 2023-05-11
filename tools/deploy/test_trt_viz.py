@@ -12,7 +12,7 @@ import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument("--engine")
 print([pc.name for pc in trt.get_plugin_registry().plugin_creator_list])
-model, dataloader, args = quick_demo(parser)
+model, dataloader, cfgs, args = quick_demo(parser)
 model.cuda()
 model.eval()
 
@@ -23,39 +23,6 @@ dataloader.dataset.load_data_to_gpu(batch_dict)
 points = batch_dict['points'].view(bs, -1, 5)[..., 1:].contiguous().cpu().numpy()
 print(points.shape)
 num_points = points.shape[1]
-
-
-def allocate_buffers(engine):
-    inputs = []
-    outputs = []
-    bindings = []
-
-    class HostDeviceMem(object):
-        def __init__(self, host_mem, device_mem):
-            self.host = host_mem
-            self.device = device_mem
-
-        def __str__(self):
-            return "Host:\n" + str(self.host) + "\nDevice:\n" + str(self.device)
-
-        def __repr__(self):
-            return self.__str__()
-
-    for binding in engine:
-
-        dims = engine.get_binding_shape(binding)
-        size = trt.volume(dims) * engine.max_batch_size  # The maximum batch size which can be used for inference.
-        dtype = trt.nptype(engine.get_binding_dtype(binding))
-        # Allocate host and device buffers
-        host_mem = cuda.pagelocked_empty(size, dtype)
-        device_mem = cuda.mem_alloc(host_mem.nbytes)
-        # Append the device buffer to device bindings.
-        bindings.append(int(device_mem))
-        if engine.binding_is_input(binding):  # Determine whether a binding is an input binding.
-            inputs.append(HostDeviceMem(host_mem, device_mem))
-        else:
-            outputs.append(HostDeviceMem(host_mem, device_mem))
-    return inputs, outputs, bindings
 
 
 def trt_inf():
@@ -92,20 +59,24 @@ def trt_inf():
                 d_outputs[binding] = cuda.mem_alloc(h_outputs[binding].nbytes)
                 # print(f"{binding}: shape({output_shape}), dtype({dtype}), dbytes({h_outputs[binding].nbytes})")
 
-        t1 = time.time()
-        for key in h_inputs:
-            cuda.memcpy_htod_async(d_inputs[key], h_inputs[key], stream)
-        context.execute_async_v2(
-            bindings=[int(d_inputs[k]) for k in d_inputs] + [int(d_outputs[k]) for k in d_outputs],
-            stream_handle=stream.handle)
-        for key in h_outputs:
-            cuda.memcpy_dtoh_async(h_outputs[key], d_outputs[key], stream)
-        stream.synchronize()
-        t2 = time.time()
-        print(1000 * (t2 - t1))
+        def infer():
+            for key in h_inputs:
+                cuda.memcpy_htod_async(d_inputs[key], h_inputs[key], stream)
+            context.execute_async_v2(
+                bindings=[int(d_inputs[k]) for k in d_inputs] + [int(d_outputs[k]) for k in d_outputs],
+                stream_handle=stream.handle)
+            for key in h_outputs:
+                cuda.memcpy_dtoh_async(h_outputs[key], d_outputs[key], stream)
+            stream.synchronize()
+
+        for _ in range(1000):
+            t1 = time.time()
+            infer()
+            t2 = time.time()
+            print(1000 * (t2 - t1))
 
         return h_outputs['boxes'].reshape(bs, 256, -1), \
-               h_outputs['scores'].reshape(bs, 256, -1)
+            h_outputs['scores'].reshape(bs, 256, -1)
 
 
 # trt_inf()

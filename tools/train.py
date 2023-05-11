@@ -80,7 +80,7 @@ if __name__ == '__main__':
     """ init config """
     cfg = parse_config(add_args().parse_args())
     set_random_seed(cfg.RUN.seed)
-    logger = create_logger(cfg.RUN.log_file)
+    logger = create_logger(name="train", log_file=cfg.RUN.log_file)
     logger.info(f"CUDA_VISIBLE_DEVICES: {os.environ.get('CUDA_VISIBLE_DEVICES', 'ALL')}")
     logger.info(f"TOTAL_BATCH_SIZE: {cfg.RUN.num_gpus * cfg.RUN.samples_per_gpu}")
     logger.info(cfg.ARGS, title=["CMDLINE ARGS", "VALUE"])

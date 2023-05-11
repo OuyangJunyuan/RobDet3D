@@ -5,7 +5,7 @@ from torch.nn.utils import clip_grad_norm_
 
 @Hook.auto_call
 def train_one_epoch(run, *args, **kwargs):
-    run.model.train()
+    kwargs.get('model', run.model).train()
     run.batch_loop(*args, **kwargs)
 
 

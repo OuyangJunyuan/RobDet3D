@@ -288,7 +288,7 @@ def build_dataloader(datasets_cfg, run_cfg=None, logger=None, training=True):
     dataloader = torch_data.DataLoader(
         dataset, batch_size=run_cfg.samples_per_gpu, num_workers=run_cfg.workers_per_gpu,
         collate_fn=dataset.collate_batch, worker_init_fn=init_func,
-        shuffle=training, drop_last=False, pin_memory=True
+        shuffle=training, drop_last=False, pin_memory=False, persistent_workers=False,
     )
     return dataloader
 

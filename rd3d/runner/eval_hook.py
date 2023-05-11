@@ -11,7 +11,7 @@ from ..api.dist import on_rank0, get_dist_state
 @Hook.auto_call
 @torch.no_grad()
 def test_one_epoch(run, *args, **kwargs):
-    run.model.eval()
+    kwargs.get('model', run.model).eval()
     run.batch_loop(*args, **kwargs)
 
 

@@ -1,8 +1,7 @@
 import torch
 import importlib
 from ..api import acc
-from ..api.log import create_logger, log_to_file
-
+from ..api.log import create_logger
 from ..utils.base import Hook
 
 
@@ -14,14 +13,8 @@ class DistRunnerBase:
         self.state = self.mode
         self.cur_loops, self.cur_epochs, self.cur_iters, self.inner_iters = 0, 0, 0, 0
         self.dist_model, self.dist_optim, self.dist_sche = acc.prepare(model, optimizer, scheduler)
-        self.logger = logger if logger is not None else create_logger()
-
-        if self.mode == "train":
-            from . import train_hook, eval_hook
-        else:
-            from . import eval_hook
-        from . import processbar_hook, tracker_hook, checkpoint_hook
-        for m in getattr(self, 'custom_import', []): importlib.import_module(m)
+        self.logger = logger if logger else create_logger(name="run")
+        self.load_module()
 
     @staticmethod
     def member(func):
@@ -54,6 +47,14 @@ class DistRunnerBase:
 
     def update(self, d={}, **kwargs):
         self.__dict__.update(d, **kwargs)
+
+    def load_module(self):
+        if self.mode == "train":
+            from . import train_hook, eval_hook
+        else:
+            from . import eval_hook
+        from . import processbar_hook, tracker_hook, checkpoint_hook
+        for m in getattr(self, 'custom_import', []): importlib.import_module(m)
 
     def state_dict(self):
         return {k: getattr(self, k, None) for k in self.state_keys}
@@ -95,11 +96,10 @@ class DistRunner(DistRunnerBase):
                         self.cur_loops = cur_loops
                         self.handle_one_epoch(model=self.dist_model, dataloader=dataloaders[self.split])
                     else:
-                        self.logger.info(f'skip work({work})')
+                        self.logger.warning(f'skip work {work}')
 
     @Hook.auto_call
     def run(self, ckpts, dataloaders):
         self.logger.info(f"*********{self.mode} {self.tags.dataset}/{self.tags.model}/{self.tags.experiment}*********")
         dataloaders = {k: acc.prepare(v) for k, v in dataloaders.items()}
-        # with log_to_file():
         self.epoch_loop(dataloaders)

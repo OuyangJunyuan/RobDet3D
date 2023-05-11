@@ -88,10 +88,11 @@ def add_boxes(vis, boxes, labels=None, scores=None, color=None, offset=None):
         if color is None:
             c = box_colormap[labels[i]] if labels is not None else (1, 0, 0)
         else:
-            c = color[i] if len(color.shape) and color.shape[0] > 1 else color
+            c = color[i] if len(color.shape) and i < color.shape[0] else color
         c = np.array(np.clip(c, 0, 1))
 
         num_lines = np.asarray(box_lines.lines).shape[0]
+
         box_lines.colors = open3d.utility.Vector3dVector(np.repeat(c[None, ...], repeats=num_lines, axis=0))
         vis.add_geometry(box_lines)
     return vis

@@ -1,4 +1,6 @@
 # !/usr/bin/env python3
+import time
+
 import torch
 from rd3d import PROJECT_ROOT
 from rd3d.datasets import DatasetTemplate
@@ -41,7 +43,7 @@ class Interface:
     def __init__(self):
         cfg = Config.fromfile(cfg_file)
 
-        self.logger = create_logger(stderr=False)
+        self.logger = create_logger(name="ros")
         self.logger.disabled = True
 
         self.demo_dataset = DemoDataset(dataset_cfg=cfg.DATASET, class_names=cfg.DATASET.CLASS_NAMES, training=False)
@@ -153,7 +155,9 @@ class DNNDetector:
 
         if points_np.shape[0] < 100:
             return
+        t1 = time.time()
         boxes, labels, scores, boundaries = self.model.inference(points_np)  # numpy in & numpy out
+        print((time.time() - t1) * 1000)
         markers = self.boxes2markers(points_msg.header, boxes)
         self.pub.publish(markers)
 

@@ -63,7 +63,7 @@ def load_from_file(filename, model=None, optimizer=None, scheduler=None, runner=
     if not os.path.isfile(filename):
         raise FileNotFoundError
 
-    logger = create_logger(stderr=True)
+    logger = create_logger()
     device = next(model.parameters()).device
     logger.info(f'==> Loading checkpoint {filename} to {device}')
     checkpoint = torch.load(filename, map_location=device)
