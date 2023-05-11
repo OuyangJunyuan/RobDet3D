@@ -52,7 +52,7 @@ class LogIterableObject:
 
 def create_logger(name=None, log_file=None, stderr=True, level=logging.INFO):
     def get_formatter():
-        name_header = '' if name is None else (' ' + name[:3])
+        name_header = '' if name is None else (' ' + name)
         return f'[%(asctime)s %(levelname)s{name_header}] %(message)s'
 
     def stream_handler():

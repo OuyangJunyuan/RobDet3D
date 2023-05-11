@@ -126,7 +126,7 @@ class EvalHook(EvalHookHelper):
     def test_one_epoch_end(self, run, *args, **kwargs):
         """ save pred_labels and logging recall information """
         pickle.dump(self.pred_labels, open(self.output_dir / 'result.pkl', 'wb'))
-        run.logger.info(f'Result is save to {self.output_dir}')
+        # run.logger.info(f'Result is save to {self.output_dir}')
 
         num_samples = len(self.pred_labels)
         avg_pred_objs = sum([a['name'].__len__() for a in self.pred_labels]) / max(1, num_samples)

@@ -61,7 +61,7 @@ class CheckPointHookHelper:
                 ckpt = run.ckpt_list[-1]
             else:
                 ckpt = run.ckpt_list[run.cur_epochs - 1]
-            run.logger.info(f'save_best_ckpt_if_metrics_update: {ckpt} - {key}')
+            self.logger.info(f'save_best_ckpt_if_metrics_update: {ckpt} - {key}')
 
             """ how many epochs the ckpt was trained """
             try:
