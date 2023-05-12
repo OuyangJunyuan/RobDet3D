@@ -17,12 +17,12 @@ ss3d = dict(
         score_threshold_high=0.9,
         iou_threshold=0.9,
         visualize=False,
-        cache=True,
+        cache=False,
     ),
     reliable_background_mining=dict(
         score_threshold=0.01,
         visualize=False,
-        cache=True,
+        cache=False,
     ),
     instance_filling=dict(
         type='instance_filling',

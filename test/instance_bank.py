@@ -6,6 +6,7 @@ from easydict import EasyDict
 from rd3d.runner.ss3d.instance_bank import InstanceBank
 
 analysis_bank = True
+visualization = False
 
 
 class TestInstanceBank(unittest.TestCase):
@@ -67,7 +68,23 @@ class TestInstanceBank(unittest.TestCase):
                 pickle.dump(infos, f)
         bank.print_analysis(infos)
         _, _, infos, vis_infos = infos
-        bank.viz(dataset, vis_infos)
+        # bank.viz(dataset, vis_infos)
+
+    @unittest.skipUnless(visualization, "")
+    def test5_infos(self):
+        from easydict import EasyDict
+        from rd3d.datasets import build_dataloader
+        from configs.base.datasets import kitti_3cls
+
+        cfg = EasyDict(db_info_path='kitti_dbinfos_train.pkl',
+                       bk_info_path='ss3d/bkinfos_train.pkl',
+                       pseudo_database_path='ss3d/pseudo_database',
+                       root_dir='data/kitti_sparse',
+                       class_names=['Car', 'Pedestrian', 'Cyclist'])
+        bank = InstanceBank(cfg)
+        dataset = build_dataloader(kitti_3cls.DATASET, training=True)
+
+        bank.viz(dataset)
 
 
 if __name__ == '__main__':
