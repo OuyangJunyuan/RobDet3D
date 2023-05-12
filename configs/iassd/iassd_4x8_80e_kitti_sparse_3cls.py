@@ -82,5 +82,6 @@ MODEL = dict(
 )
 RUN.tracker.metrics = DATASET.get('metrics', [])
 RUN.workflows.train = [dict(state='train', split='train', epochs=80)]
+RUN.checkpoints.model_zoom = 'models/ssl'
 
 add_ss3d(RUN, LR, DATASET)

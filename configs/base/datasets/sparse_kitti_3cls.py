@@ -57,6 +57,6 @@ DATASET = dict(
     metrics=[
         dict(key='Car_3d/moderate_R40', summary='best', goal='maximize', save=True),
         dict(key='Pedestrian_3d/moderate_R40', summary='best', goal='maximize'),
-        dict(key='Cyclist/moderate_R40', summary='best', goal='maximize')
+        dict(key='Cyclist_3d/moderate_R40', summary='best', goal='maximize')
     ]
 )
