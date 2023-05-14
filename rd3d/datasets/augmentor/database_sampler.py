@@ -440,10 +440,6 @@ class DataBaseSampler(object):
 
         """
         from ...ops.iou3d_nms import iou3d_nms_utils
-        if data_dict['epoch_total'] - self.disable_at_last_n_epoch <= data_dict['epoch_current']:
-            print(f"database_sampling: curt/total {data_dict['epoch_current']}/{data_dict['epoch_total']},"
-                  f" disable {self.disable_at_last_n_epoch}")
-            return data_dict
         gt_boxes = data_dict['gt_boxes']
         gt_names = data_dict['gt_names'].astype(str)
         existed_boxes = gt_boxes

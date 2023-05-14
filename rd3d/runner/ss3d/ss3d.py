@@ -53,15 +53,14 @@ class UnlabeledInstanceMiningModule:
         pickle.dump(self.aug_scene_preds_dict, open(aug_path, 'wb'))
         self.logger.info(f"save cache {raw_path.name} and {aug_path.name}")
 
-    @staticmethod
-    def score_based_filter(*args, score_thr=0.9, field='pred_scores'):
+    def score_guided_suppression(self, *args, score_thr=0.9, field='pred_scores'):
         for arg in args:
             keep = arg[field] > score_thr
             for key in arg.keys():
                 arg[key] = arg[key][keep]
+            self.logger.info("score filter (%f): %d -> %d" % (score_thr, len(keep), keep.sum()))
 
-    @staticmethod
-    def iou_guided_suppression(preds1, preds2, iou_thr=0.9):
+    def iou3d_guided_suppression(self, preds1, preds2, iou_thr=0.9):
         from ...ops.iou3d_nms.iou3d_nms_utils import boxes_bev_iou_cpu
 
         boxes1, boxes2 = preds1['pred_boxes'], preds2['pred_boxes']
@@ -77,6 +76,136 @@ class UnlabeledInstanceMiningModule:
         for (arg, ind) in [(preds1, ind1[keep]), (preds2, ind2[keep])]:
             for key in arg.keys():
                 arg[key] = arg[key][ind]
+        self.logger.info("iou3d filter (%f): %d %d -> %d" % (iou_thr, len(boxes1), len(boxes2), keep.sum()))
+
+    def image_guided_suppression(self, raw_preds, aug_preds, image_labels, iou_thr):
+        from ...utils import box_utils
+
+        def homo(x):
+            return np.concatenate((x, np.ones_like(x[..., :1])), axis=-1)
+
+        def lidar_to_img(x, num_corners=4):
+            x = homo(x) @ mat_lidar2cam.T
+            x = x @ mat_cam2img.T
+            x = x[..., :2] / x[..., 2:3]
+            if num_corners == 8:
+                return x
+            elif num_corners == 4:
+                return box_utils.corners3d_to_corners2d(x)
+            else:
+                raise NotImplementedError
+
+        def corners3d_img_to_boxes2d_p1p2(corners3d_img):
+            p1 = corners3d_img.min(axis=1)
+            p2 = corners3d_img.max(axis=1)
+            boxes2d_img = np.concatenate((p1, p2), axis=-1)
+            return boxes2d_img
+
+        def boxes2d_cwh_to_boxes2d_p1p2(boxes2d):
+            c = boxes2d[..., 0:2]
+            wh = boxes2d[..., 2:4]
+            return np.concatenate((c - wh / 2, c + wh / 2), axis=-1)
+
+        def iou2d(boxes1, boxes2):
+            boxes1 = torch.from_numpy(boxes1)
+            boxes2 = torch.from_numpy(boxes2)
+            iou = box_utils.boxes_iou_normal(boxes1, boxes2).numpy()
+            return iou
+
+        masks_2d, boxes_2d, calib = image_labels
+        mat_lidar2cam = calib['lidar2cam']
+        mat_cam2img = calib['cam2img']
+        raw_boxes = raw_preds['pred_boxes']
+        aug_boxes = aug_preds['pred_boxes']
+        h, w = masks_2d.shape[:2]
+        raw_box3d_corners3d = box_utils.boxes3d_to_corners_3d(raw_boxes)
+        raw_box3d_corners3d_img = lidar_to_img(raw_box3d_corners3d, num_corners=4)
+        raw_box2d_p1p2 = corners3d_img_to_boxes2d_p1p2(raw_box3d_corners3d_img)
+        raw_box2d_p1p2 = np.clip(raw_box2d_p1p2.reshape(-1, 2), a_min=(0, 0), a_max=(w, h)).reshape(-1, 4)
+
+        aug_box3d_corners3d = box_utils.boxes3d_to_corners_3d(aug_boxes)
+        aug_box3d_corners3d_img = lidar_to_img(aug_box3d_corners3d, num_corners=4)
+        aug_box2d_p1p2 = corners3d_img_to_boxes2d_p1p2(aug_box3d_corners3d_img)
+        aug_box2d_p1p2 = np.clip(aug_box2d_p1p2.reshape(-1, 2), a_min=(0, 0), a_max=(w, h)).reshape(-1, 4)
+
+        boxes_2d_p1p2 = boxes2d_cwh_to_boxes2d_p1p2(boxes_2d)
+        raw_iou2d = iou2d(raw_box2d_p1p2, boxes_2d_p1p2).max(axis=-1)
+        aug_iou2d = iou2d(aug_box2d_p1p2, boxes_2d_p1p2).max(axis=-1)
+        keep = np.logical_and(raw_iou2d > iou_thr, aug_iou2d > iou_thr)
+
+        for (arg, ind) in [(raw_preds, keep), (aug_preds, keep)]:
+            for key in arg.keys():
+                arg[key] = arg[key][ind]
+        self.logger.info("iou2d filter (%f): %d %d -> %d" % (iou_thr, len(raw_boxes), len(aug_boxes), keep.sum()))
+        self.viz_image_guided_suppression(masks_2d, boxes_2d, raw_box3d_corners3d_img, aug_box3d_corners3d_img)
+
+    def viz_image_guided_suppression(self, masks_2d, boxes_2d, raw_boxes_2d, aug_boxes_2d):
+        if not self.cfg.get('visualize', False):
+            return
+        import cv2 as cv
+        import matplotlib.pyplot as plt
+        from ...utils import box_utils
+        factor = 255 / max(1, masks_2d.max())
+        masks_2d = (masks_2d * factor).astype(np.uint8)
+        masks_2d = cv.cvtColor(masks_2d, cv.COLOR_GRAY2BGR)
+
+        corners2d = box_utils.boxes2d_to_corners_2d(boxes_2d)
+        corners2d_lines = box_utils.corners2d_to_lines(corners2d)
+        for k, lines in enumerate(corners2d_lines.astype(int)):
+            for line in lines:
+                cv.line(masks_2d, line[0].tolist(), line[1], (0, 255, 0), 1)
+            cv.putText(masks_2d, f"{k}", lines[2][0].tolist(),
+                       cv.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0))
+
+        if raw_boxes_2d.shape[1] == 8:
+            raw_corners_2d_lines = box_utils.corners3d_to_lines(raw_boxes_2d)
+        else:
+            raw_corners_2d_lines = box_utils.corners2d_to_lines(raw_boxes_2d)
+        for k, lines in enumerate(raw_corners_2d_lines.astype(int)):
+            for line in lines:
+                cv.line(masks_2d, line[0].tolist(), line[1], (255, 0, 0), 1)
+            cv.putText(masks_2d, f"{k}", lines[2][0].tolist(),
+                       cv.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0))
+
+        if aug_boxes_2d.shape[1] == 8:
+            aug_corners_2d_lines = box_utils.corners3d_to_lines(aug_boxes_2d)
+        else:
+            aug_corners_2d_lines = box_utils.corners2d_to_lines(aug_boxes_2d)
+        for k, lines in enumerate(aug_corners_2d_lines.astype(int)):
+            for line in lines:
+                cv.line(masks_2d, line[0].tolist(), line[1], (0, 0, 255), 1)
+            cv.putText(masks_2d, f"{k}", lines[2][0].tolist(),
+                       cv.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255))
+
+        h, w = masks_2d.shape[:2]
+        plt.figure(figsize=(int(w / 100), int(h / 100)))
+        plt.axis('off')
+        plt.imshow(masks_2d)
+        plt.tight_layout()
+        plt.show()
+        plt.close()
+
+    def viz_before_filter(self, fid, raw_points, raw_pred, aug_pred):
+        if not self.cfg.get('visualize', False):
+            return
+        from ...utils.viz_utils import viz_scenes
+        raw_boxes = raw_pred['pred_boxes']
+        aug_boxes = aug_pred['pred_boxes']
+        pts_bank, boxes_bank, gt_masks_bank = self.ins_bank.get_scene(fid)
+
+        raw_color = np.ones_like(raw_boxes[:, :3]) * np.array([1, 1, 1])
+        aug_color = np.ones_like(aug_boxes[:, :3]) * np.array([0, 0, 0])
+        bank_color = np.ones_like(boxes_bank[:, :3]) * np.array([1, 0, 0])
+
+        boxes = np.vstack((raw_boxes[:, :7], aug_boxes[:, :7], boxes_bank[:, :7]))
+        colors = np.vstack((raw_color, aug_color, bank_color))
+        viz_scenes((raw_points, (boxes, colors)), title='raw/aug paired prediction')
+
+    def viz_after_filter(self, fid, raw_points, raw_pred, aug_pred):
+        if not self.cfg.get('visualize', False):
+            return
+        from ...utils.viz_utils import viz_scenes
+        viz_scenes((raw_points, raw_pred['pred_boxes']), title='mined instance')
 
     @dist.on_rank0
     def missing_annotated_mining(self, dataloader):
@@ -84,40 +213,21 @@ class UnlabeledInstanceMiningModule:
 
         pbar_kwargs = dict(desc='instance mining', leave=False, disable=not dist.is_rank0())
         for fid in tqdm(iterable=self.raw_scene_preds_dict, **pbar_kwargs):
-            raw_pred, *no_logs = self.raw_scene_preds_dict[fid]
-            aug_pred, aug_logs = self.aug_scene_preds_dict[fid]
+            raw_preds, *no_logs = self.raw_scene_preds_dict[fid]
+            aug_preds, aug_logs = self.aug_scene_preds_dict[fid]
             raw_points = getattr(dataloader.dataset, self.cfg.get_points_func)(fid)
+            image_labels = dataloader.dataset.get_pseudo_instances(fid, return_calib=True)
+            self.global_augments.invert({'gt_boxes': aug_preds['pred_boxes']}, aug_logs)
 
-            self.global_augments.invert({'gt_boxes': aug_pred['pred_boxes']}, aug_logs)
+            self.viz_before_filter(fid, raw_points, raw_preds, aug_preds)
+            self.score_guided_suppression(raw_preds, aug_preds, score_thr=self.cfg.score_threshold_high)
+            self.iou3d_guided_suppression(raw_preds, aug_preds, iou_thr=self.cfg.iou3d_threshold)
+            self.image_guided_suppression(raw_preds, aug_preds, image_labels, iou_thr=self.cfg.iou2d_threshold)
+            self.viz_after_filter(fid, raw_points, raw_preds, aug_preds)
 
-            if self.cfg.get('visualize', False):
-                from ...utils.viz_utils import viz_scenes
-                pts_bank, boxes_bank, gt_masks_bank = self.ins_bank.get_scene(fid)
-                viz_scenes((raw_points, raw_pred['pred_boxes']),
-                           (raw_points, aug_pred['pred_boxes']),
-                           (raw_points, boxes_bank),
-                           offset=[0, 50, 0], title='raw/aug paired prediction')
-
-            nums1 = (len(raw_pred['pred_boxes']), len(aug_pred['pred_boxes']))
-            self.score_based_filter(raw_pred, aug_pred, score_thr=self.cfg.score_threshold_high)
-            nums2 = (len(raw_pred['pred_boxes']), len(aug_pred['pred_boxes']))
-            self.iou_guided_suppression(raw_pred, aug_pred, iou_thr=self.cfg.iou_threshold)
-            reliable_pred = raw_pred
-
+            reliable_pred = raw_preds
             self.ins_bank.try_insert(fid, raw_points, **reliable_pred)
-
-            if self.cfg.get('visualize', False):
-                from ...utils.viz_utils import viz_scenes
-                viz_scenes((raw_points, reliable_pred['pred_boxes']), title='mined instance')
-
-            self.logger.info(f"frame {fid} "
-                             f"raw({nums1[0]}) "
-                             f"aug({nums1[1]}) "
-                             f"-> "
-                             f"raw({nums2[0]}) "
-                             f"aug({nums2[1]}) "
-                             f"-> reliable({len(reliable_pred['pred_boxes'])})")
-
+            self.logger.info(f"frame {fid} reliable: {len(reliable_pred['pred_boxes'])}")
         self.ins_bank.save_to_disk()
 
     @torch.no_grad()

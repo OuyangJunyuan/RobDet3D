@@ -158,7 +158,7 @@ class DatasetTemplate(torch_data.Dataset):
         # NOTE:
         # unreasonable to do that.
         # it will return a data_dict that mismatch with the index pass to dataset.getitem]
-        # Foreremore, gt-aug are used in training phase to avoid no gt.
+        # Furthermore, gt-aug are used in training phase to avoid no gt.
         # if self.training and len(data_dict['gt_boxes']) == 0:
         #     new_index = np.random.randint(self.__len__())
         #     return self.__getitem__(new_index)
@@ -215,7 +215,7 @@ class DatasetTemplate(torch_data.Dataset):
                     for k in range(batch_size):
                         batch_gt_boxes3d[k, :val[k].__len__(), :] = val[k]
                     ret[key] = batch_gt_boxes3d
-                elif key in ['gt_boxes2d']:
+                elif key in ['gt_boxes2d', 'pseudo_boxes_2d']:
                     max_boxes = 0
                     max_boxes = max([len(x) for x in val])
                     batch_boxes2d = np.zeros((batch_size, max_boxes, val[0].shape[-1]), dtype=np.float32)
@@ -223,7 +223,7 @@ class DatasetTemplate(torch_data.Dataset):
                         if val[k].size > 0:
                             batch_boxes2d[k, :val[k].__len__(), :] = val[k]
                     ret[key] = batch_boxes2d
-                elif key in ["images", "depth_maps"]:
+                elif key in ["images", "depth_maps", "pseudo_masks_2d"]:
                     # Get largest image size (H, W)
                     max_h = 0
                     max_w = 0

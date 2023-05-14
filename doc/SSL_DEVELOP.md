@@ -5,3 +5,44 @@
 if n or m == 0:
     return
 ```
+# 使用最新的进行filling
+
+# 使用pseudo mask
+原因：
+1. 查看log，发现0.9的分数经常可以，但是0.9的iou阈值太难了，因此最后得到的pseudo label太少了.
+```shell
+[2023-05-12 01:47:58,050 INFO ins] frame 005407 raw(12) aug(11) -> raw(5) aug(4) -> reliable(0)
+[2023-05-12 01:47:58,051 INFO ins] frame 005624 raw(17) aug(17) -> raw(2) aug(1) -> reliable(0)
+[2023-05-12 01:47:58,053 INFO ins] frame 002560 raw(8) aug(10) -> raw(1) aug(1) -> reliable(0)
+[2023-05-12 01:47:58,054 INFO ins] frame 002816 raw(17) aug(15) -> raw(5) aug(2) -> reliable(0)
+[2023-05-12 01:47:58,056 INFO ins] frame 002349 raw(15) aug(18) -> raw(8) aug(8) -> reliable(0)
+[2023-05-12 01:47:58,057 INFO ins] frame 005500 raw(9) aug(8) -> raw(3) aug(3) -> reliable(0)
+[2023-05-12 01:47:58,058 INFO ins] frame 002559 raw(15) aug(16) -> raw(4) aug(1) -> reliable(0)
+```
+解决方法
+1. 动态阈值？
+   1. 内部的点越多，iou阈值就可以第一点
+   2. 一开始的iou可以低一点，后面再拉高。或反过来
+2. 逐渐加强数据增强。。。
+
+使用mask：
+1. 使用很小的iou如0.1，能匹配上且类别一致表明此处大概率是一个物体。
+2. 把raw和aug的预测3d box投影到图像上，算和pseudo box 2d的iou。语义一致且iou够就算这个box是对的。
+   1. raw和aug平均值作为pseudo label。 
+   2. 谁和2dbox的iou大听谁的。
+   3. 用各自和2d 的iou做为权重融合两个3dbox作为pseudo label。
+   4. weighted box fusion
+3. 使用1和2几轮后，性能提升了。此时分数估计是比较准的，使用图像上的box和预测的box比较，即使分数低也要了。
+4. 理论上，那些iou match的，但是分数低的不应该直接丢弃，可以作为soft标签。
+
+5. 使用KBF(MS3D)或WBF来进行box fusion得到好用的box。
+考虑一下mask的利用，以及是否增加额外augment。
+## 版本1
+使用0.1的iou3d阈值，然后使用0.8的iou2d阈值。
+raw和aug对2dbox的iou都大于0.8才选择。
+其余的自己和自己iou>0.9或score>0.1才行。
+
+## 版本2
+对图像的iou只需要有一个>0.8即可。
+## 版本3
+插入时候更新。比较score和ioupair。

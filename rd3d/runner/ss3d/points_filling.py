@@ -52,7 +52,7 @@ class InstanceFilling(Augmentor):
             handled[iou[i] > 0] = True
         return boxes[select]
 
-    def sample_instances_from_bank(self, num, sample_method='invert_density'):
+    def sample_instances_from_bank(self, num, sample_method='latest'):
         sampled_frame_ids = np.random.choice(list(self.bank_info.keys()), num)
 
         if sample_method == 'random':
@@ -75,6 +75,8 @@ class InstanceFilling(Augmentor):
                     except ValueError:
                         print(num_ins, sample_prob)
                         sampled_ins_ids.append(num_ins - 1)
+        elif sample_method == 'latest':
+            sampled_ins_ids = [-1 for _ in sampled_frame_ids]
         else:
             raise NotImplementedError
 

@@ -93,6 +93,34 @@ class KittiDataset(DatasetTemplate):
         assert img_file.exists()
         return np.array(io.imread(img_file).shape[:2], dtype=np.int32)
 
+    def get_pseudo_instances(self, idx, return_calib=False):
+        def get_pseudo_instances_labels():
+            import json
+            label_file = self.root_split_path / 'image_2_mask' / idx / 'mask.json'
+            assert label_file.exists()
+            with open(label_file, 'r') as f:
+                labels = json.loads(f.read())
+            class_names = [cls.lower() for cls in self.class_names]
+            labels = [[*d['box'], d['logit'], class_names.index(d['label'].split()[0]) + 1] for d in labels[1:]]
+            return np.array(labels)
+
+        def get_pseudo_instances_masks():
+            mask_file = self.root_split_path / 'image_2_mask' / idx / 'mask.png'
+            assert mask_file.exists()
+            masks = io.imread(mask_file)
+            return masks
+
+        def get_calib_matrices():
+            calib_matrices = kitti_utils.calib_to_matricies(self.get_calib(idx))
+            return {'lidar2cam': calib_matrices[0], 'cam2img': calib_matrices[1]}
+
+        ins_masks = get_pseudo_instances_masks()
+        ins_labels = get_pseudo_instances_labels()
+        if return_calib:
+            calib_mats = get_calib_matrices()
+            return ins_masks, ins_labels, calib_mats
+        return ins_masks, ins_labels
+
     def get_label(self, idx):
         label_file = self.root_split_path / 'label_2' / ('%s.txt' % idx)
         assert label_file.exists()
@@ -375,23 +403,20 @@ class KittiDataset(DatasetTemplate):
 
         return len(self.kitti_infos)
 
-    def __getitem__(self, index):
-        # index = 4
+    def __getitem__(self, index: int):
         if self._merge_all_iters_to_one_epoch:
             index = index % len(self.kitti_infos)
 
-        info = copy.deepcopy(self.kitti_infos[index])
+        get_item_list = self.dataset_cfg.get('GET_ITEM_LIST', ['points'])
 
+        info: dict = copy.deepcopy(self.kitti_infos[index])
         sample_idx = info['point_cloud']['lidar_idx']
         img_shape = info['image']['image_shape']
         calib = self.get_calib(sample_idx)
-        get_item_list = self.dataset_cfg.get('GET_ITEM_LIST', ['points'])
 
         input_dict = {
             'frame_id': sample_idx,
-            'calib': calib,
-            'epoch_total': getattr(self, 'epoch_total', 1),
-            'epoch_current': getattr(self, 'epoch_current', 0)
+            'calib': calib
         }
 
         if 'annos' in info:
@@ -423,17 +448,20 @@ class KittiDataset(DatasetTemplate):
 
         if "images" in get_item_list:
             input_dict['images'] = self.get_image(sample_idx)
+            input_dict['image_shape'] = img_shape
 
         if "depth_maps" in get_item_list:
             input_dict['depth_maps'] = self.get_depth_map(sample_idx)
 
-        if "calib_matricies" in get_item_list:
+        if "calib_matrices" in get_item_list:
             input_dict["trans_lidar_to_cam"], input_dict["trans_cam_to_img"] = kitti_utils.calib_to_matricies(calib)
 
-        input_dict['calib'] = calib
+        if "pseudo_instances_2d" in get_item_list:
+            input_dict['pseudo_masks_2d'], input_dict['pseudo_boxes_2d'] = self.get_pseudo_instances(sample_idx)
+            input_dict['image_shape'] = img_shape
+
         data_dict = self.prepare_data(data_dict=input_dict)
 
-        data_dict['image_shape'] = img_shape
         return data_dict
 
 

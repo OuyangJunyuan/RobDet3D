@@ -52,6 +52,65 @@ def boxes_to_corners_3d(boxes3d):
 
     return corners3d.numpy() if is_numpy else corners3d
 
+
+boxes3d_to_corners_3d = boxes_to_corners_3d
+
+
+def boxes2d_to_corners_2d(boxes2d):
+    boxes2d, is_numpy = common_utils.check_numpy_to_torch(boxes2d)
+
+    template = boxes2d.new_tensor(([1, 1], [1, -1], [-1, -1], [-1, 1])) / 2
+    corners2d = boxes2d[:, None, 2:4].repeat(1, 4, 1) * template[None, :, :]
+    corners2d += boxes2d[:, None, 0:2]
+
+    return corners2d.numpy() if is_numpy else corners2d
+
+
+def corners3d_to_corners2d(corners3d):
+    """
+
+    Args:
+        corners3d:[b,8,2] in image pixel coordinates
+
+    Returns:
+        corner2d: [b,4,2] in image pixel coordinates
+    """
+    if isinstance(corners3d, np.ndarray):
+        corners3d = torch.from_numpy(corners3d)
+        is_numpy = True
+    else:
+        is_numpy = False
+    p1 = corners3d.min(dim=1)[0]
+    p2 = corners3d.max(dim=1)[0]
+    c = (p1 + p2) / 2
+    wh = p2 - p1
+    boxes2d = torch.cat((c, wh), dim=-1)
+    corners2d = boxes2d_to_corners_2d(boxes2d)
+    return corners2d.numpy() if is_numpy else corners2d
+
+
+
+def corners3d_to_lines(corners3d):
+    if isinstance(corners3d, np.ndarray):
+        corners3d = torch.from_numpy(corners3d)
+        is_numpy = True
+    else:
+        is_numpy = False
+    corners3d = corners3d[:, torch.tensor([[0, 1], [0, 3], [2, 3], [2, 1], [4, 5], [4, 7],
+                                           [6, 7], [6, 5], [3, 7], [0, 4], [1, 5], [2, 6]])]  # direction: 0, 5, 1, 4
+    return corners3d.numpy() if is_numpy else corners3d
+
+
+def corners2d_to_lines(corners2d):
+    if isinstance(corners2d, np.ndarray):
+        corners2d = torch.from_numpy(corners2d)
+        is_numpy = True
+    else:
+        is_numpy = False
+    corners2d = corners2d[:, torch.tensor([[0, 1], [1, 2], [2, 3], [3, 0]])]
+    return corners2d.numpy() if is_numpy else corners2d
+
+
 def corners_rect_to_camera(corners):
     """
         7 -------- 4
@@ -80,11 +139,11 @@ def corners_rect_to_camera(corners):
         vector[0] += (corners[index_v[0], :] - corners[index_v[1], :])[0]
         vector[1] += (corners[index_v[0], :] - corners[index_v[1], :])[2]
 
-    height, width, length = height*1.0/4, width*1.0/4, length*1.0/4
+    height, width, length = height * 1.0 / 4, width * 1.0 / 4, length * 1.0 / 4
     rotation_y = -np.arctan2(vector[1], vector[0])
 
     center_point = corners.mean(axis=0)
-    center_point[1] += height/2
+    center_point[1] += height / 2
     camera_rect = np.concatenate([center_point, np.array([length, height, width, rotation_y])])
 
     return camera_rect

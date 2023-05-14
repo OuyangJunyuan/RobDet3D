@@ -13,16 +13,22 @@ ss3d = dict(
     unlabeled_instance_mining=dict(
         global_augments=global_augments,
         get_points_func='get_lidar',
-        score_threshold_low=0.1,
-        score_threshold_high=0.9,
-        iou_threshold=0.9,
-        visualize=False,
-        cache=False,
+
+        # score_threshold_low=0.1,
+        # score_threshold_high=0.9,
+        # iou_threshold=0.9,
+
+        score_threshold_high=0.1,
+        iou3d_threshold=0.1,
+        iou2d_threshold=0.8,
+        visualize=True,
+        cache=True,
     ),
     reliable_background_mining=dict(
         score_threshold=0.01,
+
         visualize=False,
-        cache=False,
+        cache=True,
     ),
     instance_filling=dict(
         type='instance_filling',
@@ -37,10 +43,10 @@ train_flow = ss3d['iter_num'] * [dict(state='mine_miss_anno_ins', split='train',
 
 
 def add_ss3d(RUN, LR, DATASET):
+    # DATASET.GET_ITEM_LIST = ['points', 'calib_matrices', 'pseudo_instances_2d']
     ss3d.update(root_dir=DATASET.DATA_PATH,
                 class_names=DATASET.CLASS_NAMES,
                 lr=LR)
     RUN.ss3d = ss3d
-
     RUN.workflows.train += train_flow
     RUN.custom_import += ['rd3d.runner.ss3d.ss3d']  # import to invoke ss3d hook

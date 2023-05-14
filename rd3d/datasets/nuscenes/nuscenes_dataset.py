@@ -129,9 +129,7 @@ class NuScenesDataset(DatasetTemplate):
         input_dict = {
             'points': points,
             'frame_id': Path(info['lidar_path']).stem,
-            'metadata': {'token': info['token']},
-            'epoch_total': getattr(self, 'epoch_total', 1),
-            'epoch_current': getattr(self, 'epoch_current', 0)
+            'metadata': {'token': info['token']}
         }
 
         if 'gt_boxes' in info:

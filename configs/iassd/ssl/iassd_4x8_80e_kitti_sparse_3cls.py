@@ -1,6 +1,6 @@
-from ..base.datasets.kitti_sparse_3cls import *
-from ..base.runtime.adam_onecycle_8_80e import *
-from ..base.supervised.ss3d_kitti import *
+from ...base.datasets.kitti_sparse_3cls import *
+from ...base.runtime.adam_onecycle_8_80e import *
+from ...base.supervised.ss3d_kitti import *
 
 DATASET.DATA_PROCESSOR = [
     dict(NAME='mask_points_and_boxes_outside_range',

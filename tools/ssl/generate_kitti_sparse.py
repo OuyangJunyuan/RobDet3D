@@ -13,7 +13,7 @@ output_root.mkdir(parents=True, exist_ok=True)
 splits = 'ImageSets'
 test_set = 'testing'
 training_set = 'training'
-items = ['calib', 'image_2', 'image_3', 'planes', 'velodyne']
+items = ['calib', 'image_2', 'image_2_mask', 'image_3', 'planes', 'velodyne']
 
 target_path = output_root / splits
 if not target_path.exists():
@@ -25,8 +25,9 @@ if not target_path.exists():
 
 (output_root / training_set).mkdir(parents=True, exist_ok=True)
 for item in items:
+    source_path = data_root / training_set / item
     target_path = output_root / training_set / item
-    if not target_path.exists():
+    if source_path.exists() and not target_path.exists():
         os.symlink(data_root / training_set / item, target_path)
 
 print('process labels')
@@ -52,4 +53,5 @@ for label in tqdm.tqdm(training_frames):
         f.write(rnd.choice(valid_annos))
 
 import os
+
 os.system('python -m rd3d.datasets.kitti.kitti_dataset create_kitti_infos configs/base/datasets/kitti_sparse_3cls.py')
