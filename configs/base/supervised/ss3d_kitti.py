@@ -14,21 +14,20 @@ ss3d = dict(
         global_augments=global_augments,
         get_points_func='get_lidar',
 
-        # score_threshold_low=0.1,
-        # score_threshold_high=0.9,
-        # iou_threshold=0.9,
-
-        score_threshold_high=0.1,
-        iou3d_threshold=0.1,
+        score_threshold_low=0.1,
+        iou3d_threshold_low=0.1,
         iou2d_threshold=0.8,
-        visualize=True,
-        cache=True,
+        score_threshold_high=0.9,
+        iou3d_threshold_high=0.5,
+
+        visualize=False,
+        cache=False,
     ),
     reliable_background_mining=dict(
         score_threshold=0.01,
 
         visualize=False,
-        cache=True,
+        cache=False,
     ),
     instance_filling=dict(
         type='instance_filling',

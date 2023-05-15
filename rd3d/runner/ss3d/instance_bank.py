@@ -1,115 +1,12 @@
 import pickle
 import numpy as np
-from tqdm import tqdm
 from pathlib import Path
 
 from ...api import on_rank0, create_logger
-from ...utils.base import merge_dicts, replace_attr
+from ...utils.base import merge_dicts
 
 
-class InstanceBankHelper:
-    def analysis(self, full_annotated_dataset, threshold_list=(0.1, 0.5, 0.7)):
-        class_names = full_annotated_dataset.class_names
-        thresh = [0.0, *threshold_list, 1.0]
-        thresh.sort()
-
-        infos = {c: dict(gt=0, anno=0, pseudo=0, iou={k: 0 for k in thresh[:-1]}) for c in class_names}
-        vis_infos = []
-        with replace_attr(full_annotated_dataset.data_augmentor, data_augmentor_queue=[]):
-            for i, data_dict in enumerate(tqdm(iterable=full_annotated_dataset, desc='coverage ratio')):
-                frame_id = data_dict['frame_id']
-
-                gt_boxes = data_dict['gt_boxes'][:, :7]
-                gt_labels = data_dict['gt_boxes'][:, 7]
-
-                bank_boxes, anno_mask = self.get_scene(frame_id, return_points=False)
-                anno_labels = bank_boxes[anno_mask, 7]
-
-                pseudo_mask = np.logical_not(anno_mask)
-                pseudo_boxes = bank_boxes[pseudo_mask, :7]
-                pseudo_labels = bank_boxes[pseudo_mask, 7]
-
-                iou = self.boxes_iou_cpu(pseudo_boxes, gt_boxes)
-                masks = {}
-                for t in range(0, len(thresh) - 1):
-                    lower, higher = thresh[t], thresh[t + 1]
-                    iou_mask = np.logical_and(lower < iou, iou <= higher).any(axis=-1)
-                    for c in range(len(class_names)):
-                        pseudo_label_mask = (c + 1) == pseudo_labels
-                        infos[class_names[c]]['iou'][lower] += np.logical_and(iou_mask, pseudo_label_mask).sum()
-                    masks[lower] = iou_mask
-
-                if len(pseudo_boxes):
-                    vis_infos.append((i, frame_id, masks))
-
-                for c in range(len(class_names)):
-                    infos[class_names[c]]['gt'] += ((c + 1) == gt_labels).sum()
-                    infos[class_names[c]]['anno'] += ((c + 1) == anno_labels).sum()
-                    infos[class_names[c]]['pseudo'] += ((c + 1) == pseudo_labels).sum()
-        thresh.pop(-1)
-        return class_names, thresh, infos, vis_infos
-
-    @staticmethod
-    def print_analysis(infos):
-        import prettytable
-        class_names, thresh, infos, vis_infos = infos
-        np.set_printoptions(formatter={'float': '{: 0.2f}'.format})
-        tb = prettytable.PrettyTable(title="instance bank information",
-                                     field_names=['class', 'gt', 'anno', 'pseudo',
-                                                  f'recall {[0] + thresh}', f'precision {[0] + thresh}'])
-        tb.set_style(prettytable.SINGLE_BORDER)
-
-        num_gt_all = sum([infos[c]['gt'] for c in class_names])
-        num_anno_all = sum([infos[c]['anno'] for c in class_names])
-        num_pseudo_all = sum([infos[c]['pseudo'] for c in class_names])
-        num_match_all = np.zeros(len(thresh) + 1, dtype=int)
-        for c in class_names:
-            num_gt, num_anno, num_pseudo = infos[c]['gt'], infos[c]['anno'], infos[c]['pseudo']
-            match = np.array(list(infos[c]['iou'].values()))
-            match = np.array([num_pseudo - match.sum(), *match])
-            num_match_all += match
-            recall = match / max(num_gt - num_anno, 1)
-            precision = match / max(num_pseudo, 1)
-            tb.add_row((c, num_gt, num_anno, num_pseudo, recall, precision))
-        recall_all = num_match_all / max(num_gt_all - num_anno_all, 1)
-        precision_all = num_match_all / max(num_pseudo_all, 1)
-        tb.add_row(('all', num_gt_all, num_anno_all, num_pseudo_all, recall_all, precision_all))
-
-        print(tb.get_string())
-
-    def viz(self, dataset, infos=None):
-        from rd3d.utils import viz_utils
-        if infos is None:
-            mask = np.array([len(f[1]) for f in sorted(self.bk_infos.items(), key=lambda x: x[0])])
-            data_indices = np.nonzero(mask)[0]
-            iou_masks = []
-        else:
-            data_indices, _, iou_masks = zip(*infos)
-
-        with replace_attr(dataset.data_augmentor, data_augmentor_queue=[]):
-            for index in data_indices:
-                data_dict = dataset[index]
-                frame_id = data_dict['frame_id']
-                points = data_dict['points']
-
-                obj_pts, ins_boxes, gt_mask = self.get_scene(frame_id, return_points=True)
-                colors = np.ones_like(ins_boxes[:, :3])
-                colors[gt_mask] = np.array([0, 1, 0])
-                pseudo_mask = np.logical_not(gt_mask)
-                colors[gt_mask] = np.array([1, 0, 0])
-
-                # if index < len(iou_masks):
-                #     recall_info = iou_masks[index]
-                #     print(recall_info)
-                #     colors[pseudo_mask][recall_info[0.0]] = np.array([1, 0, 0])
-                #     colors[pseudo_mask][recall_info[0.1]] = np.array([0, 0, 0])
-                #     colors[pseudo_mask][recall_info[0.5]] = np.array([0.5, 0.5, 0.5])
-                #     colors[pseudo_mask][recall_info[0.7]] = np.array([1.0, 1.0, 1.0])
-
-                viz_utils.viz_scenes((points, (ins_boxes, colors), np.vstack(obj_pts)))
-
-
-class InstanceBank(InstanceBankHelper):
+class InstanceBank(object):
 
     def __init__(self, bank_cfg, root_dir=None, class_names=None):
         self.bk_infos = {}
@@ -236,7 +133,7 @@ class InstanceBank(InstanceBankHelper):
         self.logger.warning(f"add instance {idx} to scene {frame_id} (class: {name})")
 
     @on_rank0
-    def try_insert(self, frame_id, points, pred_boxes, pred_labels, pred_scores):
+    def try_insert(self, frame_id, points, pred_boxes, pred_labels, pred_scores, **kwargs):
         from ...ops.roiaware_pool3d.roiaware_pool3d_utils import points_in_boxes_cpu
         # TODO: we directly refuse all predictions that overlap with objs in bank
         #  without consider to update them by comparing their scores.

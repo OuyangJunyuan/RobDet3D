@@ -44,48 +44,6 @@ class TestInstanceBank(unittest.TestCase):
         colors[gt_mask] = np.array([0, 1, 0])
         viz_utils.viz_scenes((points, (ins_boxes, colors)))
 
-    @unittest.skipUnless(analysis_bank, "")
-    def test4_infos(self):
-        from easydict import EasyDict
-        from rd3d.datasets import build_dataloader
-        from configs.base.datasets import kitti_3cls
-
-        cfg = EasyDict(db_info_path='kitti_dbinfos_train.pkl',
-                       bk_info_path='ss3d/bkinfos_train.pkl',
-                       pseudo_database_path='ss3d/pseudo_database',
-                       root_dir='data/kitti_sparse',
-                       class_names=['Car', 'Pedestrian', 'Cyclist'])
-
-        bank = InstanceBank(cfg)
-        dataset = build_dataloader(kitti_3cls.DATASET, training=True)
-        cache_file = "cache/coverage_ratio.pkl"
-        if Path(cache_file).exists():
-            with open(cache_file, 'rb') as f:
-                infos = pickle.load(f)
-        else:
-            infos = bank.analysis(dataset)
-            with open(cache_file, 'wb') as f:
-                pickle.dump(infos, f)
-        bank.print_analysis(infos)
-        _, _, infos, vis_infos = infos
-        # bank.viz(dataset, vis_infos)
-
-    @unittest.skipUnless(visualization, "")
-    def test5_infos(self):
-        from easydict import EasyDict
-        from rd3d.datasets import build_dataloader
-        from configs.base.datasets import kitti_3cls
-
-        cfg = EasyDict(db_info_path='kitti_dbinfos_train.pkl',
-                       bk_info_path='ss3d/bkinfos_train.pkl',
-                       pseudo_database_path='ss3d/pseudo_database',
-                       root_dir='data/kitti_sparse',
-                       class_names=['Car', 'Pedestrian', 'Cyclist'])
-        bank = InstanceBank(cfg)
-        dataset = build_dataloader(kitti_3cls.DATASET, training=True)
-
-        bank.viz(dataset)
-
 
 if __name__ == '__main__':
     unittest.main()

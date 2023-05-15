@@ -31,8 +31,8 @@ class TestSampler(unittest.TestCase):
             self.vis.get_render_option().point_size = 1.0
             self.vis.get_render_option().background_color = np.ones(3) * 0.1
             axis_pcd = open3d.geometry.TriangleMesh.create_coordinate_frame(size=10.0, origin=[0, 0, 0])
-            self.vis.add_geometry(axis_pcd)
             self.vis.clear_geometries()
+            self.vis.add_geometry(axis_pcd)
 
     def tearDown(self) -> None:
         if visualize:

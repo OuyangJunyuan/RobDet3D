@@ -53,7 +53,7 @@ class KittiDataset(DatasetTemplate):
                 kitti_infos.extend(infos)
 
         self.kitti_infos.extend(kitti_infos)
-        self.infos = self.kitti_infos
+
         if self.logger is not None:
             self.logger.info('Total samples for KITTI dataset: %d' % (len(kitti_infos)))
 
@@ -403,7 +403,7 @@ class KittiDataset(DatasetTemplate):
 
         return len(self.kitti_infos)
 
-    def __getitem__(self, index: int):
+    def __getitem__(self, index):
         if self._merge_all_iters_to_one_epoch:
             index = index % len(self.kitti_infos)
 
@@ -418,6 +418,9 @@ class KittiDataset(DatasetTemplate):
             'frame_id': sample_idx,
             'calib': calib
         }
+
+        if not self.training:
+            input_dict['image_shape'] = img_shape
 
         if 'annos' in info:
             annos = info['annos']
@@ -461,7 +464,6 @@ class KittiDataset(DatasetTemplate):
             input_dict['image_shape'] = img_shape
 
         data_dict = self.prepare_data(data_dict=input_dict)
-
         return data_dict
 
 

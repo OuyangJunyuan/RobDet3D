@@ -35,6 +35,24 @@ class UnlabeledInstanceMiningModule:
                 arg[k] = arg[k].detach().cpu().numpy()
         return args
 
+    @staticmethod
+    def filter_out_data(arg, keep):
+        keep_dict = {}
+        remove_dict = {}
+        remove = np.logical_not(keep)
+        for key in arg.keys():
+            keep_dict[key] = arg[key][keep]
+            remove_dict[key] = arg[key][remove]
+        return keep_dict, remove_dict
+
+    @staticmethod
+    def merge_dicts(dict1, dict2):
+        assert dict1.keys() == dict2.keys()
+        ret = {}
+        for key in dict1:
+            ret[key] = np.concatenate((dict1[key], dict2[key]), axis=0)
+        return ret
+
     def load(self, root=None):
         raw_path = (root or self.root_path) / 'raw_scene_preds_dict.pkl'
         aug_path = (root or self.root_path) / 'aug_scene_preds_dict.pkl'
@@ -54,28 +72,35 @@ class UnlabeledInstanceMiningModule:
         self.logger.info(f"save cache {raw_path.name} and {aug_path.name}")
 
     def score_guided_suppression(self, *args, score_thr=0.9, field='pred_scores'):
+        results = []
         for arg in args:
             keep = arg[field] > score_thr
             for key in arg.keys():
                 arg[key] = arg[key][keep]
+            results.append(keep)
             self.logger.info("score filter (%f): %d -> %d" % (score_thr, len(keep), keep.sum()))
+        return results
 
     def iou3d_guided_suppression(self, preds1, preds2, iou_thr=0.9):
         from ...ops.iou3d_nms.iou3d_nms_utils import boxes_bev_iou_cpu
 
         boxes1, boxes2 = preds1['pred_boxes'], preds2['pred_boxes']
         n, m = boxes1.shape[0], boxes2.shape[0]
+
         if n == 0 or m == 0:
             keep = ind1 = ind2 = np.array([], dtype=int)
+            pairs_iou = np.array([], dtype=np.float32)
         else:
             iou = boxes_bev_iou_cpu(boxes1, boxes2)
             ind1, ind2 = np.arange(n), np.argmax(iou, -1)
             pairs_iou = iou[ind1, ind2]
+            self.logger.info(f"pairs iou3d: {pairs_iou}")
             keep = pairs_iou > iou_thr
 
         for (arg, ind) in [(preds1, ind1[keep]), (preds2, ind2[keep])]:
             for key in arg.keys():
                 arg[key] = arg[key][ind]
+            arg['iou3d'] = pairs_iou[keep]
         self.logger.info("iou3d filter (%f): %d %d -> %d" % (iou_thr, len(boxes1), len(boxes2), keep.sum()))
 
     def image_guided_suppression(self, raw_preds, aug_preds, image_labels, iou_thr):
@@ -132,12 +157,13 @@ class UnlabeledInstanceMiningModule:
         raw_iou2d = iou2d(raw_box2d_p1p2, boxes_2d_p1p2).max(axis=-1)
         aug_iou2d = iou2d(aug_box2d_p1p2, boxes_2d_p1p2).max(axis=-1)
         keep = np.logical_and(raw_iou2d > iou_thr, aug_iou2d > iou_thr)
-
-        for (arg, ind) in [(raw_preds, keep), (aug_preds, keep)]:
-            for key in arg.keys():
-                arg[key] = arg[key][ind]
+        raw_preds['iou2d'] = raw_iou2d
+        aug_preds['iou2d'] = aug_iou2d
+        self.logger.info(f"raw preds iou2d iou: {raw_iou2d}")
+        self.logger.info(f"aug preds iou2d iou: {aug_iou2d}")
         self.logger.info("iou2d filter (%f): %d %d -> %d" % (iou_thr, len(raw_boxes), len(aug_boxes), keep.sum()))
         self.viz_image_guided_suppression(masks_2d, boxes_2d, raw_box3d_corners3d_img, aug_box3d_corners3d_img)
+        return keep
 
     def viz_image_guided_suppression(self, masks_2d, boxes_2d, raw_boxes_2d, aug_boxes_2d):
         if not self.cfg.get('visualize', False):
@@ -201,11 +227,29 @@ class UnlabeledInstanceMiningModule:
         colors = np.vstack((raw_color, aug_color, bank_color))
         viz_scenes((raw_points, (boxes, colors)), title='raw/aug paired prediction')
 
-    def viz_after_filter(self, fid, raw_points, raw_pred, aug_pred):
+    def viz_after_filter(self, fid, raw_points, raw_pred):
         if not self.cfg.get('visualize', False):
             return
         from ...utils.viz_utils import viz_scenes
         viz_scenes((raw_points, raw_pred['pred_boxes']), title='mined instance')
+
+    @staticmethod
+    def get_reliable_boxes(raw_preds, aug_preds):
+        """
+        raw_preds: {pred_boxes, pred_scores, pred_labels, iou3d, iou2d}
+        """
+        from ...utils.common_utils import limit_period
+        weights = [0.6, 0.4]
+        fused_keys = ['pred_boxes', 'pred_scores', 'iou3d']
+        ret = {k: v for k, v in raw_preds.items() if k not in fused_keys}
+        raw_preds['pred_boxes'][:, 6] = limit_period(raw_preds['pred_boxes'][:, 6], offset=0.5, period=2 * np.pi)
+        aug_preds['pred_boxes'][:, 6] = limit_period(aug_preds['pred_boxes'][:, 6], offset=0.5, period=2 * np.pi)
+        for k in fused_keys:
+            fused = raw_preds[k] * weights[0] + aug_preds[k] * weights[1]
+            ret[k] = fused.astype(raw_preds[k].dtype)
+        unreliable_heading = np.abs(aug_preds['pred_boxes'][:, 6] - raw_preds['pred_boxes'][:, 6]) > np.pi / 4
+        ret['pred_boxes'][unreliable_heading, 6] = raw_preds['pred_boxes'][unreliable_heading, 6]
+        return ret
 
     @dist.on_rank0
     def missing_annotated_mining(self, dataloader):
@@ -220,13 +264,30 @@ class UnlabeledInstanceMiningModule:
             self.global_augments.invert({'gt_boxes': aug_preds['pred_boxes']}, aug_logs)
 
             self.viz_before_filter(fid, raw_points, raw_preds, aug_preds)
-            self.score_guided_suppression(raw_preds, aug_preds, score_thr=self.cfg.score_threshold_high)
-            self.iou3d_guided_suppression(raw_preds, aug_preds, iou_thr=self.cfg.iou3d_threshold)
-            self.image_guided_suppression(raw_preds, aug_preds, image_labels, iou_thr=self.cfg.iou2d_threshold)
-            self.viz_after_filter(fid, raw_points, raw_preds, aug_preds)
+            self.score_guided_suppression(
+                raw_preds, aug_preds, score_thr=self.cfg.score_threshold_low
+            )
+            self.iou3d_guided_suppression(
+                raw_preds, aug_preds, iou_thr=self.cfg.iou3d_threshold_low
+            )
+            iou_2d_keep = self.image_guided_suppression(
+                raw_preds, aug_preds, image_labels, iou_thr=self.cfg.iou2d_threshold
+            )
+            match_2d_raw_pred, unmatch_2d_raw_pred = self.filter_out_data(raw_preds, iou_2d_keep)
+            match_2d_aug_pred, unmatch_2d_aug_pred = self.filter_out_data(aug_preds, iou_2d_keep)
+            self.score_guided_suppression(
+                unmatch_2d_raw_pred, unmatch_2d_aug_pred, score_thr=self.cfg.score_threshold_high
+            )
+            self.iou3d_guided_suppression(
+                unmatch_2d_raw_pred, unmatch_2d_aug_pred, iou_thr=self.cfg.iou3d_threshold_high
+            )
+            raw_preds = self.merge_dicts(match_2d_raw_pred, unmatch_2d_raw_pred)
+            aug_preds = self.merge_dicts(match_2d_aug_pred, unmatch_2d_aug_pred)
+            reliable_pred = self.get_reliable_boxes(raw_preds, aug_preds)
+            self.viz_after_filter(fid, raw_points, reliable_pred)
 
-            reliable_pred = raw_preds
             self.ins_bank.try_insert(fid, raw_points, **reliable_pred)
+
             self.logger.info(f"frame {fid} reliable: {len(reliable_pred['pred_boxes'])}")
         self.ins_bank.save_to_disk()
 
