@@ -2,7 +2,7 @@ import open3d
 import numpy as np
 
 
-def add_points(vis, points, colors=None, offset=None):
+def add_points(vis, points, colors=None, offset=None, name=None, material=None):
     def color_map(x):
         import matplotlib.pyplot as plt
         cmap = plt.get_cmap('turbo')
@@ -27,7 +27,10 @@ def add_points(vis, points, colors=None, offset=None):
     o3d_geometry = open3d.geometry.PointCloud()
     o3d_geometry.points = open3d.utility.Vector3dVector(np.ascontiguousarray(xyz))
     o3d_geometry.colors = open3d.utility.Vector3dVector(np.clip(np.ascontiguousarray(colors), 0, 1))
-    vis.add_geometry(o3d_geometry)
+    if material is None:
+        vis.add_geometry(o3d_geometry)
+    else:
+        vis.add_geometry(name, o3d_geometry, material)
 
 
 def add_keypoint(vis, points, radius=0.05, color=None, offset=None):
@@ -45,7 +48,7 @@ def add_keypoint(vis, points, radius=0.05, color=None, offset=None):
         vis.add_geometry(mesh_sphere)
 
 
-def add_boxes(vis, boxes, labels=None, scores=None, color=None, offset=None):
+def add_boxes(vis, boxes, labels=None, scores=None, color=None, offset=None, name=None, material=None):
     def translate_boxes_to_open3d_instance(gt_boxes):
         """
                  4-------- 6
@@ -94,7 +97,11 @@ def add_boxes(vis, boxes, labels=None, scores=None, color=None, offset=None):
         num_lines = np.asarray(box_lines.lines).shape[0]
 
         box_lines.colors = open3d.utility.Vector3dVector(np.repeat(c[None, ...], repeats=num_lines, axis=0))
-        vis.add_geometry(box_lines)
+
+        if material is None:
+            vis.add_geometry(box_lines)
+        else:
+            vis.add_geometry("%s_%d" % (name, i), box_lines, material)
     return vis
 
 
