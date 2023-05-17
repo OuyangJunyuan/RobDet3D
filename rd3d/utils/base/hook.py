@@ -46,30 +46,30 @@ class Hook:
         return wrapper
 
 
-def test():
-    @Hook.priority(1)
-    class Hook1:
-        def main_begin(self):
-            print('Hook1 invokes main_begin')
-
-        def main_end(self):
-            print('Hook1 invokes main_end')
-
-    @Hook.priority(0)
-    class Hook2:
-        def main_begin(self):
-            print('Hook2 invokes main_begin')
-
-        def main_end(self):
-            print('Hook2 invokes main_end')
-
-    @Hook.auto_call
-    def main():
-        print('call main')
-
-    print(str(Hook()))
-    main()
-
-
-if __name__ == '__main__':
-    test()
+# def test():
+#     @Hook.priority(1)
+#     class Hook1:
+#         def main_begin(self):
+#             print('Hook1 invokes main_begin')
+#
+#         def main_end(self):
+#             print('Hook1 invokes main_end')
+#
+#     @Hook.priority(0)
+#     class Hook2:
+#         def main_begin(self):
+#             print('Hook2 invokes main_begin')
+#
+#         def main_end(self):
+#             print('Hook2 invokes main_end')
+#
+#     @Hook.auto_call
+#     def main():
+#         print('call main')
+#
+#     print(str(Hook()))
+#     main()
+#
+#
+# if __name__ == '__main__':
+#     test()

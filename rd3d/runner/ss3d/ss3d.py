@@ -430,7 +430,6 @@ class ReliableBackGroundMiningModule:
 @Hook.priority(3)
 class SS3DHook:
     def __init__(self):
-        super().__init__()
         from ...api.config import Config
         self.cfg = Config.cfg.RUN.ss3d
         self.enable = False
